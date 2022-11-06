@@ -1,8 +1,10 @@
 from typing import List
 
+import collections
 import os
 
 import torch
+import torchvision
 import dataclasses
 import yaml
 
@@ -27,6 +29,13 @@ def get_labeled_image_paths(root):
 def get_labeled_label_paths(root):
     return _get_relative_paths_below(os.path.join(root, 'labels'))
 
+
+def load_class_index():
+    location = os.path.join(DATA_ROOT, 'class_index.yaml')
+    with open(location, 'r') as f:
+        result = yaml.safe_load(f)
+    assert len(result) == 100
+    return result
 
 def collect_paths_by_index(paths):
     def clean(path):
@@ -67,10 +76,51 @@ def parse_labels(labels_yaml):
     assert len(labels) == len(bboxes)
     return [
         Label(bbox=bbox, label=label)
-            for bbox, label
+        for bbox, label
         in zip(bboxes, labels)
     ]
 
-class LabeledDataSet(torch.utils.data.IterableDataset):
-    def __init__(self, root_dir):
-        self.root_dir = root_dir
+
+class LabeledDataset(torch.utils.data.Dataset):
+    # transforms must have the signature
+    #   (image_tensor, bboxes_tensor, class_tensor) ->
+    #     (image_tensor, bboxes_tensor, class_tensor)
+    def __init__(self, root_dir, transforms=tuple()):
+        self.transforms = transforms
+        unsorted_examples_by_index = collect_examples_by_index(
+            image_paths=get_labeled_image_paths(root_dir),
+            label_paths=get_labeled_label_paths(root_dir)
+        )
+        # Sort for determinism, drop the key
+        self.examples_by_index = list(
+            (image_path, label_path)
+            for key, (image_path, label_path)
+            in sorted(unsorted_examples_by_index.items())
+        )
+
+        self.class_index = load_class_index()
+        self.transforms = transforms
+
+        # TODO(pscollins): Add an option to prefetch into memory for faster
+        # loading.
+
+
+    def __len__(self):
+        return len(self.examples_by_index)
+
+
+    def __getitem__(self, idx):
+        image_path, label_path = self.examples_by_index[idx]
+        image_tensor = torchvision.io.read_image(image_path)
+
+        with open(label_path, 'r') as f:
+            labels = parse_labels(f.read())
+
+        bbox_tensor = torch.tensor([l.bbox for l in labels])
+        class_tensor = torch.tensor([self.class_index[l.label] for l in labels])
+
+        result = (image_tensor, bbox_tensor, class_tensor)
+
+        for t in self.transforms:
+            result = t(*result)
+        return result

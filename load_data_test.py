@@ -1,8 +1,9 @@
 import unittest
+
 import load_data
+import torch
 
 Label = load_data.Label
-
 
 class DataLoaderTest(unittest.TestCase):
     def test_load_paths(self):
@@ -87,7 +88,41 @@ labels:
         self.assertEqual(load_data.parse_labels(label_yaml),
                          expected)
 
+    def test_load_class_index(self):
+        class_index = load_data.load_class_index()
+        self.assertEqual(class_index['fig'], 38)
 
+    def test_load_dataset(self):
+        ds = load_data.LabeledDataset(root_dir=load_data.VALIDATION_DATA_ROOT)
+
+        self.assertEqual(20000, len(ds))
+
+        image, bboxes, classes = ds[100]
+
+        self.assertTrue(isinstance(image, torch.Tensor))
+        # [C, H, W]
+        self.assertEqual(3, image.dim())
+
+        # [idx, 4]
+        self.assertEqual(2, bboxes.dim())
+        self.assertEqual(4, bboxes.shape[1])
+
+        # [idx]
+        self.assertEqual(1, classes.dim())
+        self.assertEqual(bboxes.shape[0], classes.shape[0])
+
+    @unittest.skip('slow test')
+    def test_dataset_consistency(self):
+        roots = [
+            load_data.TRAINING_DATA_ROOT, load_data.VALIDATION_DATA_ROOT
+        ]
+
+        for root in roots:
+            with self.subTest(root=root):
+                ds = load_data.LabeledDataset(root)
+                for img, bboxes, classes in ds:
+                    # mostly just test that things load
+                    self.assertEqual(bboxes.shape[0], classes.shape[0])
 
 
 
