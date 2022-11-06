@@ -14,14 +14,18 @@ VALIDATION_DATA_ROOT = os.path.join(DATA_ROOT, 'labeled_data', 'validation')
 
 UNLABLED_DATA_ROOT = os.path.join(DATA_ROOT, 'unlabeled_data')
 
+def _get_relative_paths_below(root):
+    return [
+        os.path.join(root, f)
+        for f in os.listdir(root)
+    ]
+
 def get_labeled_image_paths(root):
-    image_path = os.path.join(root, 'images')
-    return os.listdir(image_path)
+    return _get_relative_paths_below(os.path.join(root, 'images'))
 
 
 def get_labeled_label_paths(root):
-    label_path = os.path.join(root, 'labels')
-    return os.listdir(label_path)
+    return _get_relative_paths_below(os.path.join(root, 'labels'))
 
 
 def collect_paths_by_index(paths):

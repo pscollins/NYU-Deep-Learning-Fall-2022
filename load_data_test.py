@@ -11,12 +11,15 @@ class DataLoaderTest(unittest.TestCase):
             load_data.VALIDATION_DATA_ROOT: 20000,
         }
         for (root, expected) in roots_to_expected.items():
-            num_images = len(load_data.get_labeled_image_paths(root))
-            num_labels = len(load_data.get_labeled_label_paths(root))
+            images = load_data.get_labeled_image_paths(root)
+            labels = load_data.get_labeled_label_paths(root)
 
-            self.assertEqual(num_images, num_labels)
-            self.assertEqual(num_images, expected)
-            self.assertEqual(num_labels, expected)
+            self.assertEqual(len(images), len(labels))
+            self.assertEqual(len(images), expected)
+            self.assertEqual(len(labels), expected)
+
+            self.assertIn(root, images[0])
+            self.assertIn(root, labels[0])
 
     def test_collect_paths(self):
         paths = [
