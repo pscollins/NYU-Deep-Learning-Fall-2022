@@ -48,12 +48,14 @@ class LossTest(unittest.TestCase):
 
     def test_intersection(self):
         bbox_pairs = [
+            ([0, 0, 0, 0], [0, 0, 0, 0]),
             ([0, 0, 2, 2], [0, 0, 2, 2]),
             ([0, 0, 2, 2], [1, 1, 2, 2]),
             ([0, 0, 2, 2], [-1, -1, 3, 3]),
             ([0, 0, 1, 1], [0, 0, 1, -1]),
         ]
         expected = [
+            [0, 0, 0, 0],
             [0, 0, 2, 2],
             [1, 1, 2, 2],
             [0, 0, 2, 2],
@@ -61,10 +63,8 @@ class LossTest(unittest.TestCase):
         ]
 
         left_bboxes, right_bboxes = zip(*bbox_pairs)
-        print(left_bboxes)
 
         actual = loss.bbox_intersection(mktensor(left_bboxes), mktensor(right_bboxes))
-        print(f'{actual=}')
         torch.testing.assert_close(actual, mktensor(expected))
 
 

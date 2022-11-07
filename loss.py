@@ -58,32 +58,26 @@ def bbox_intersection(left_bboxes, right_bboxes):
 
     # [B, 4, 2]
     joined_bboxes = torch.stack((left_bboxes, right_bboxes), dim=-1)
-    print(f'{joined_bboxes.shape=}')
-
     # 2 x [B, 4]
     lo_bboxes, hi_bboxes = torch.aminmax(joined_bboxes.squeeze(dim=-1), dim=-1)
 
-    print(f'{lo_bboxes.shape=}, {hi_bboxes.shape=}')
+    # 4 x [B]
+    x_lo, x_hi = hi_bboxes[:, 0], lo_bboxes[:, 2]
+    y_lo, y_hi = hi_bboxes[:, 0], lo_bboxes[:, 3]
 
     # [B, 4]
-    d_bboxes = hi_bboxes - lo_bboxes
-
+    intersection = torch.stack([x_lo, y_lo, x_hi, y_hi], dim=-1)
     # 2 x [B]
-    dx_d_bboxes, dy_d_bboxes = _bboxes_side_lengths(d_bboxes)
+    dx, dy = _bboxes_side_lengths(intersection)
+    # [B, 1]
+    signed_area = (dx * dy).unsqueeze(-1)
 
-    print(f'{dx_d_bboxes=}, {dy_d_bboxes=}')
-
-    intersection = torch.where(
-        (dx_d_bboxes > _EPSILON) & (dy_d_bboxes > _EPSILON),
-        d_bboxes,
-        torch.zeros_like(d_bboxes)
-    )
-
-    return intersection.squeeze(-1)
-
-
-    # TODO(pscollins): Test that each bbox is sorted?
-
+    intersection = torch.where(signed_area > _EPSILON,
+                               intersection,
+                               torch.zeros_like(intersection))
+    # TODO(pscollins): There will probably be some duplicated computation here,
+    # since the caller also wants the area.
+    return intersection
 
 def generalized_intersection_over_union(predicted_bboxes, ground_truth_bboxes):
     # https://giou.stanford.edu/
