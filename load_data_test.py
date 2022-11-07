@@ -112,7 +112,7 @@ labels:
         self.assertEqual(bboxes.shape[0], classes.shape[0])
 
     @unittest.skip('slow test')
-    def test_dataset_consistency(self):
+    def test_labeled_dataset_consistency(self):
         roots = [
             load_data.TRAINING_DATA_ROOT, load_data.VALIDATION_DATA_ROOT
         ]
@@ -123,6 +123,23 @@ labels:
                 for img, bboxes, classes in ds:
                     # mostly just test that things load
                     self.assertEqual(bboxes.shape[0], classes.shape[0])
+
+
+    def test_unlabeled_dataset_transforms(self):
+        def transform(_):
+            return torch.ones((4, 4))
+        def augment(tensor):
+            return tensor - 1
+
+        ds = load_data.UnlabeledDataset(transform=transform, augment=augment)
+
+        augmented, img = ds[10]
+
+        torch.testing.assert_close(img, torch.ones((4, 4)))
+        torch.testing.assert_close(augmented, torch.zeros((4, 4)))
+
+
+
 
 
 

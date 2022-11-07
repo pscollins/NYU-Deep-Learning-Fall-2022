@@ -85,8 +85,7 @@ class LabeledDataset(torch.utils.data.Dataset):
     # transforms must have the signature
     #   (image_tensor, bboxes_tensor, class_tensor) ->
     #     (image_tensor, bboxes_tensor, class_tensor)
-    def __init__(self, root_dir, transforms=tuple()):
-        self.transforms = transforms
+    def __init__(self, root_dir, transform=lambda *x: x):
         unsorted_examples_by_index = collect_examples_by_index(
             image_paths=get_labeled_image_paths(root_dir),
             label_paths=get_labeled_label_paths(root_dir)
@@ -99,7 +98,7 @@ class LabeledDataset(torch.utils.data.Dataset):
         )
 
         self.class_index = load_class_index()
-        self.transforms = transforms
+        self.transform = transform
 
         # TODO(pscollins): Add an option to prefetch into memory for faster
         # loading.
@@ -119,8 +118,33 @@ class LabeledDataset(torch.utils.data.Dataset):
         bbox_tensor = torch.tensor([l.bbox for l in labels])
         class_tensor = torch.tensor([self.class_index[l.label] for l in labels])
 
-        result = (image_tensor, bbox_tensor, class_tensor)
+        result = self.transform(image_tensor, bbox_tensor, class_tensor)
 
-        for t in self.transforms:
-            result = t(*result)
         return result
+
+
+
+# Returns data of the form
+#    (augmented, original)
+# where
+#   original = transform(load_image(path))
+#   augmented = augment(original)
+class UnlabeledDataset(torch.utils.data.Dataset):
+    # transform and augment
+    def __init__(self, root_dir=UNLABLED_DATA_ROOT, transform=lambda x: x, augment=lambda x: x):
+        # sort for determinism
+        self.image_paths = list(sorted(_get_relative_paths_below(root_dir)))
+        self.transform = transform
+        self.augment = augment
+
+        # TODO(pscollins): Prefetching?
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        path = self.image_paths[idx]
+        img = torchvision.io.read_image(path)
+        img = self.transform(img)
+        augmented = self.augment(img)
+        return (augmented, img)
