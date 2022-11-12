@@ -20,7 +20,7 @@ import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.optim
 import apex
-from apex.parallel.LARC import LARC
+from shim.larc import LARC
 
 from src.utils import (
     bool_flag,
