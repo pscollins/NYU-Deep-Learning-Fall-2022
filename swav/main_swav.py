@@ -320,7 +320,8 @@ def train(train_loader, model, optimizer, epoch, lr_schedule, queue):
         # ============ backward and optim step ... ============
         optimizer.zero_grad()
         if args.use_fp16:
-            with torch.amp.scale_loss(loss, optimizer) as scaled_loss:
+            # with torch.amp.scale_loss(loss, optimizer) as scaled_loss:
+            with torch.amp.scale(loss, optimizer) as scaled_loss:
                 scaled_loss.backward()
         else:
             loss.backward()
