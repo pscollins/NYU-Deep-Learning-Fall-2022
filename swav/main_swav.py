@@ -19,7 +19,7 @@ import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.optim
-import apex
+# import apex
 from shim.larc import LARC
 
 from src.utils import (
@@ -159,8 +159,9 @@ def main():
     elif args.sync_bn == "apex":
         # with apex syncbn we sync bn per group because it speeds up computation
         # compared to global syncbn
-        process_group = apex.parallel.create_syncbn_process_group(args.syncbn_process_group_size)
-        model = apex.parallel.convert_syncbn_model(model, process_group=process_group)
+        # process_group = apex.parallel.create_syncbn_process_group(args.syncbn_process_group_size)
+        # model = apex.parallel.convert_syncbn_model(model, process_group=process_group)
+        raise NotImplementedError("apex support is removed")
     # copy model to GPU
     model = model.cuda()
     if args.rank == 0:
@@ -182,10 +183,12 @@ def main():
     lr_schedule = np.concatenate((warmup_lr_schedule, cosine_lr_schedule))
     logger.info("Building optimizer done.")
 
+    # no need to init pytorch amp
+    #
     # init mixed precision
-    if args.use_fp16:
-        model, optimizer = apex.amp.initialize(model, optimizer, opt_level="O1")
-        logger.info("Initializing mixed precision done.")
+    # if args.use_fp16:
+    #     model, optimizer = torch.amp.initialize(model, optimizer, opt_level="O1")
+    #     logger.info("Initializing mixed precision done.")
 
     # wrap model
     model = nn.parallel.DistributedDataParallel(
@@ -200,7 +203,7 @@ def main():
         run_variables=to_restore,
         state_dict=model,
         optimizer=optimizer,
-        amp=apex.amp,
+        amp=torch.amp,
     )
     start_epoch = to_restore["epoch"]
 
@@ -242,7 +245,7 @@ def main():
                 "optimizer": optimizer.state_dict(),
             }
             if args.use_fp16:
-                save_dict["amp"] = apex.amp.state_dict()
+                save_dict["amp"] = torch.amp.state_dict()
             torch.save(
                 save_dict,
                 os.path.join(args.dump_path, "checkpoint.pth.tar"),
@@ -317,7 +320,7 @@ def train(train_loader, model, optimizer, epoch, lr_schedule, queue):
         # ============ backward and optim step ... ============
         optimizer.zero_grad()
         if args.use_fp16:
-            with apex.amp.scale_loss(loss, optimizer) as scaled_loss:
+            with torch.amp.scale_loss(loss, optimizer) as scaled_loss:
                 scaled_loss.backward()
         else:
             loss.backward()
