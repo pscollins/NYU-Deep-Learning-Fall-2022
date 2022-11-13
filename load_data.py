@@ -145,6 +145,7 @@ class UnlabeledDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         path = self.image_paths[idx]
+        print(f'load path: {path}')
         img = torchvision.io.read_image(path)
         img = self.transform(img)
         augmented = self.augment(img)
