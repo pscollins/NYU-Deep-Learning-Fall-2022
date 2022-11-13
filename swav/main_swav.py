@@ -30,6 +30,9 @@ sys.path.insert(0, '.')
 # from ... import load_data
 import load_data
 
+import PIL
+
+# TODO: switch to XLA
 # import torch_xla
 # import torch_xla.core.xla_model as xm
 
@@ -147,7 +150,9 @@ def main():
     # build data
     # if False:
     if args.use_unlabeled_dataset:
-        ds = load_data.UnlabeledDataset(root_dir=args.unlabeled_dataset_path)
+        # load images as PIL rather than the default, pytorch tensor
+        read_image = PIL.Image.open
+        ds = load_data.UnlabeledDataset(root_dir=args.unlabeled_dataset_path, read_image=read_image)
         train_dataset = MultiCropDataset(
             ds,
             args.size_crops,
