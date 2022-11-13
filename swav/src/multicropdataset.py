@@ -19,7 +19,8 @@ class MultiCropDataset:
 # class MultiCropDataset(datasets.ImageFolder):
     def __init__(
         self,
-        data_path,
+        delegate,
+        # data_path
         size_crops,
         nmb_crops,
         min_scale_crops,
@@ -28,7 +29,7 @@ class MultiCropDataset:
         return_index=False,
     ):
         # super(MultiCropDataset, self).__init__(data_path)
-        self.delegate = datasets.ImageFolder(data_path)
+        self.delegate = delegate
         assert len(size_crops) == len(nmb_crops)
         assert len(min_scale_crops) == len(nmb_crops)
         assert len(max_scale_crops) == len(nmb_crops)
@@ -54,6 +55,15 @@ class MultiCropDataset:
                 transforms.Normalize(mean=mean, std=std)])
             ] * nmb_crops[i])
         self.trans = trans
+
+    @classmethod
+    def from_path(cls, data_path, size_crops, nmb_crops, min_scale_crops, max_scale_crops,
+                  size_dataset=-1, return_index=False):
+        print(f'{data_path=}')
+        delegate = datasets.ImageFolder(data_path)
+        return MultiCropDataset(delegate, size_crops, nmb_crops, min_scale_crops,
+                                max_scale_crops, size_dataset, return_index)
+
 
     def __getitem__(self, index):
         path, _ = self.delegate.samples[index]

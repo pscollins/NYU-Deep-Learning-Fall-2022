@@ -133,7 +133,7 @@ def main():
     logger, training_stats = initialize_exp(args, "epoch", "loss")
 
     # build data
-    train_dataset = MultiCropDataset(
+    train_dataset = MultiCropDataset.from_path(
         args.data_path,
         args.size_crops,
         args.nmb_crops,
