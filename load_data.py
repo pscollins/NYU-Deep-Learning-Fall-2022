@@ -37,6 +37,12 @@ def load_class_index():
     assert len(result) == 100
     return result
 
+def load_inverted_class_index():
+    class_index = load_class_index()
+    return {
+        v: k for k, v in class_index.items()
+    }
+
 def collect_paths_by_index(paths):
     def clean(path):
         basename = os.path.basename(path)
@@ -80,6 +86,9 @@ def parse_labels(labels_yaml):
         in zip(bboxes, labels)
     ]
 
+# def crop_tensor_to_bbox(img, bbox):
+#     col0, row0, 1, y1 = bbox[0]
+
 
 class LabeledDataset(torch.utils.data.Dataset):
     # transforms must have the signature
@@ -107,6 +116,11 @@ class LabeledDataset(torch.utils.data.Dataset):
         return len(self.examples_by_index)
 
 
+    # returns (image, bboxes, classes)
+    # with shape:
+    #  ([C, H, W], [N, H, W], [N])
+    #
+    # where N is the number of bounding boxes in the specified image.
     def __getitem__(self, idx):
         image_path, label_path = self.examples_by_index[idx]
         image_tensor = torchvision.io.read_image(image_path)
@@ -120,6 +134,21 @@ class LabeledDataset(torch.utils.data.Dataset):
         result = self.transform(image_tensor, bbox_tensor, class_tensor)
 
         return result
+
+
+
+# Returns crops from the labeled dataset corresponding to a single bounding
+# box. For images containing multiple bounding boxes, a random one is chosen.
+class ClassifierDataset(torch.utils.data.Dataset):
+    def __init__(self, root_dir, inner_transform=lambda *x: x,
+                 outer_transform=lambda *x: x):
+        # inner_transform must have the signature for LabeledDataset's transform.
+        #
+        # outer_transform must have the signature
+        #   (image_tensor) -> (image_tensor)
+        self.labeled_dataset = LabeledDataset(root_dir,
+                                              transform=inner_transform)
+        self.outer_transform = outer_transform
 
 
 

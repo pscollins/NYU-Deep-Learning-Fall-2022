@@ -90,7 +90,11 @@ labels:
 
     def test_load_class_index(self):
         class_index = load_data.load_class_index()
-        self.assertEqual(class_index['fig'], 38)
+        self.assertEqual(class_index['fig'], 68)
+
+    def test_load_inverted_class_index(self):
+        inverted_class_index = load_data.load_inverted_class_index()
+        self.assertEqual(inverted_class_index[68], 'fig')
 
     def test_load_dataset(self):
         ds = load_data.LabeledDataset(root_dir=load_data.VALIDATION_DATA_ROOT)
