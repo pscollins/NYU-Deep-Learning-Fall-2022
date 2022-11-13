@@ -86,8 +86,20 @@ def parse_labels(labels_yaml):
         in zip(bboxes, labels)
     ]
 
-# def crop_tensor_to_bbox(img, bbox):
-#     col0, row0, 1, y1 = bbox[0]
+def crop_tensor_to_bbox(img, bbox):
+    # TODO(pscollins): consider batching
+    x0, y0, x1, y1 = bbox
+    dx = x1 - x0
+    dy = y1 - y0
+
+    cropped = torchvision.transforms.functional.crop(
+        img,
+        top=y0,
+        left=x0,
+        height=dy,
+        width=dx)
+    return cropped
+
 
 
 class LabeledDataset(torch.utils.data.Dataset):
@@ -141,15 +153,29 @@ class LabeledDataset(torch.utils.data.Dataset):
 # box. For images containing multiple bounding boxes, a random one is chosen.
 class ClassifierDataset(torch.utils.data.Dataset):
     def __init__(self, root_dir, inner_transform=lambda *x: x,
-                 outer_transform=lambda *x: x):
+                 outer_transform=lambda x: x, dataset_factory=LabeledDataset):
         # inner_transform must have the signature for LabeledDataset's transform.
         #
         # outer_transform must have the signature
         #   (image_tensor) -> (image_tensor)
-        self.labeled_dataset = LabeledDataset(root_dir,
+        self.labeled_dataset = dataset_factory(root_dir,
                                               transform=inner_transform)
         self.outer_transform = outer_transform
 
+    def __len__(self):
+        # just 1 crop per image, so no need to count bboxes
+        return len(self.labeled_dataset)
+
+    # returns (image, class)
+    # with shape
+    #   ([C, H, W], [1])
+    def __getitem__(self, idx):
+        img, bboxes, classes = self.labeled_dataset[idx]
+
+        bbox_idx = torch.randint(low=0, high=len(bboxes), size=(1,)).item()
+        cropped = crop_tensor_to_bbox(img, bboxes[bbox_idx])
+        cropped = self.outer_transform(cropped)
+        return (cropped, classes[bbox_idx])
 
 
 # Returns data of the form

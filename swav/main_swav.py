@@ -151,7 +151,10 @@ def main():
     # if False:
     if args.use_unlabeled_dataset:
         # load images as PIL rather than the default, pytorch tensor
-        read_image = PIL.Image.open
+        def read_image(path):
+            f = PIL.Image.open(path)
+            f.load()
+            return f
         ds = load_data.UnlabeledDataset(root_dir=args.unlabeled_dataset_path, read_image=read_image)
         train_dataset = MultiCropDataset(
             ds,

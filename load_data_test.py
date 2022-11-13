@@ -1,7 +1,9 @@
+import load_data
+
 import unittest
 
-import load_data
 import torch
+import torchvision
 
 Label = load_data.Label
 
@@ -141,6 +143,91 @@ labels:
 
         torch.testing.assert_close(img, torch.ones((4, 4)))
         torch.testing.assert_close(augmented, torch.zeros((4, 4)))
+
+
+    def test_crop_tensor_to_bbox(self):
+        img = torch.ones(1, 150, 100)
+        bboxes_and_expecteds = [
+            ([0, 0, 100, 100], (100, 100)),
+            ([0, 100, 100, 150], (50, 100)),
+            ([0, 0, 1, 1], (1, 1)),
+            ([1, 1, 2, 2], (1, 1))
+        ]
+
+        for bbox, expected in bboxes_and_expecteds:
+            cropped = load_data.crop_tensor_to_bbox(img, bbox)
+            self.assertEqual(cropped.shape, (1,) + expected)
+
+
+    def test_classifier_dataset_fake(self):
+        class FakeDataset:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __len__(self):
+                return 1
+
+            def __getitem__(self, idx):
+                img = torch.ones(1, 100, 100)
+                bboxes = torch.tensor([
+                    [0, 0, 1, 1],
+                    [0, 0, 2, 2]
+                    ])
+                classes = torch.tensor([12, 155])
+
+                return (img, bboxes, classes)
+
+        ds = load_data.ClassifierDataset(root_dir='', dataset_factory=FakeDataset)
+
+        MAX_ATTEMPTS = 100
+
+        seen_classes = set()
+        for _ in range(MAX_ATTEMPTS):
+            img, class_idx = ds[0]
+            seen_classes.add(class_idx)
+            expected_shape = {
+                12: (1, 1, 1),
+                155: (1, 2, 2),
+            }[class_idx.item()]
+            self.assertEqual(img.shape, expected_shape)
+
+            if len(seen_classes) == 2:
+                # success, we saw both classes
+                return
+
+        # fail the test
+        self.assertTrue(False)
+
+    def test_classifier_dataset_basic(self):
+        # just verify that things look reasonable
+        idx_to_class = load_data.load_inverted_class_index()
+
+        COUNT = 5
+        ds = load_data.ClassifierDataset(root_dir=load_data.TRAINING_DATA_ROOT)
+        for i in range(5):
+            img, class_idx = ds[i]
+            self.assertIn(class_idx.item(), idx_to_class)
+            # 3 channels
+            self.assertEqual(3, img.shape[0])
+
+    def test_classifier_dataset_resize(self):
+        # just verify that things look reasonable
+        idx_to_class = load_data.load_inverted_class_index()
+
+        COUNT = 5
+        resize = torchvision.transforms.Resize(224)
+        ds = load_data.ClassifierDataset(root_dir=load_data.TRAINING_DATA_ROOT,
+                                         outer_transform=resize)
+        for i in range(5):
+            img, class_idx = ds[i]
+            self.assertIn(class_idx.item(), idx_to_class)
+            # 3 channels
+            self.assertEqual(3, img.shape[0])
+            # resize increases the shorter side
+            self.assertLessEqual(224, min(img.shape[1:]))
+
+
+
 
 
 

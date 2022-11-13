@@ -99,24 +99,14 @@ class PILRandomGaussianBlur(object):
         if not do_it:
             return img
 
-        if hasattr(img, 'filter'):
-            return img.filter(
-                ImageFilter.GaussianBlur(
-                    radius=random.uniform(self.radius_min, self.radius_max)
-                )
+        # See https://github.com/pytorch/vision/issues/5194#issuecomment-1015324529
+        #
+        # for mapping to torchvision
+        return img.filter(
+            ImageFilter.GaussianBlur(
+                radius=random.uniform(self.radius_min, self.radius_max)
             )
-        else:
-            # Based on https://github.com/pytorch/vision/issues/5194#issuecomment-1015324529
-            #
-            # translate back to the old openCV implementation with an explicit kernel size
-            return transforms.GaussianBlur((23, 23),
-                                           sigma=random.uniform(self.radius_min, self.radius_max))(img)
-
-        # return img.filter(
-        #     ImageFilter.GaussianBlur(
-        #         radius=random.uniform(self.radius_min, self.radius_max)
-        #     )
-        # )
+        )
 
 
 def get_color_distortion(s=1.0):
