@@ -56,8 +56,8 @@ parser.add_argument("--data_path", type=str, default="/path/to/imagenet",
                     help="path to imagenet")
 parser.add_argument("--workers", default=10, type=int,
                     help="number of data loading workers")
-parser.add_argument("--use_imagenet", type=bool, default=True,
-                    help="use imagenet vs crop-based data")
+parser.add_argument("--use_imagenet", default=False,
+                    help="use imagenet vs crop-based data", action='store_true')
 parser.add_argument("--train_data_path", type=str, default='.',
                     help="path to crop-based training data")
 parser.add_argument("--val_data_path", type=str, default='.',
@@ -143,13 +143,11 @@ def build_imagenet_loaders(args):
         num_workers=args.workers,
         pin_memory=True,
     )
+    logger.info("Building data done with {} images loaded.".format(len(train_dataset)))
     return train_loader, val_loader
 
 def build_cropped_loaders(args):
-    train_data_path = args.train_data_path
-    val_data_path = args.val_data_path
-
-    resize = torchvision.transforms.Resize(size=INPUT_H_W, antialias=True)
+    resize = transforms.Resize(size=INPUT_H_W, antialias=True)
     normalize = transforms.Normalize(
         mean=[0.485, 0.456, 0.406], std=[0.228, 0.224, 0.225]
     )
@@ -169,10 +167,12 @@ def build_cropped_loaders(args):
 
     train_dataset = load_data.ClassifierDataset(
         root_dir=args.train_data_path,
-        outer_transforms=train_transforms)
+        load_image=load_data.pil_loader,
+        outer_transform=train_transforms)
     val_dataset = load_data.ClassifierDataset(
         root_dir=args.val_data_path,
-        outer_transforms=val_transforms)
+        load_image=load_data.pil_loader,
+        outer_transform=val_transforms)
 
     sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
     train_loader = torch.utils.data.DataLoader(
@@ -189,13 +189,9 @@ def build_cropped_loaders(args):
         pin_memory=True,
     )
 
+    logger.info("Building data done with {} images loaded.".format(len(train_dataset)))
+
     return train_loader, val_loader
-
-
-
-
-
-
 
 
 
@@ -208,12 +204,14 @@ def main():
         args, "epoch", "loss", "prec1", "prec5", "loss_val", "prec1_val", "prec5_val"
     )
 
+    print('use imagenet? ', args.use_imagenet)
+    print('train: ', args.train_data_path)
+
     if args.use_imagenet:
         train_loader, val_loader = build_imagenet_loaders(args)
     else:
         train_loader, val_loader = build_cropped_loaders(args)
 
-    logger.info("Building data done with {} images loaded.".format(len(train_dataset)))
 
     # build model
     model = resnet_models.__dict__[args.arch](output_dim=1000)
@@ -236,7 +234,7 @@ def main():
                 state_dict[k] = v
         msg = model.load_state_dict(state_dict, strict=False)
         logger.info("Load pretrained model with msg: {}".format(msg))
-    else if args.pretrained_from_hub:
+    elif args.pretrained_from_hub:
         model = torch.hub.load('facebookresearch/swav:main', args.arch)
     else:
         logger.info("No pretrained weights found => training from random weights")

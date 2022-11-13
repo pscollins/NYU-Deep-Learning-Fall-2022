@@ -8,6 +8,7 @@ import torchvision
 import dataclasses
 import yaml
 
+from PIL import Image
 
 
 DATA_ROOT = 'data/'
@@ -88,7 +89,10 @@ def parse_labels(labels_yaml):
 
 def crop_tensor_to_bbox(img, bbox):
     # TODO(pscollins): consider batching
-    x0, y0, x1, y1 = bbox
+    if isinstance(bbox, torch.Tensor):
+        x0, y0, x1, y1 = bbox.tolist()
+    else:
+        x0, y0, x1, y1 = bbox
     dx = x1 - x0
     dy = y1 - y0
 
@@ -101,12 +105,19 @@ def crop_tensor_to_bbox(img, bbox):
     return cropped
 
 
+# https://pytorch.org/vision/main/_modules/torchvision/datasets/folder.html#ImageFolder
+def pil_loader(path: str):
+    # open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
+    with open(path, "rb") as f:
+        img = Image.open(f)
+        return img.convert("RGB")
 
 class LabeledDataset(torch.utils.data.Dataset):
     # transforms must have the signature
     #   (image_tensor, bboxes_tensor, class_tensor) ->
     #     (image_tensor, bboxes_tensor, class_tensor)
-    def __init__(self, root_dir, transform=lambda *x: x):
+    def __init__(self, root_dir, load_image=torchvision.io.read_image,
+                 transform=lambda *x: x):
         unsorted_examples_by_index = collect_examples_by_index(
             image_paths=get_labeled_image_paths(root_dir),
             label_paths=get_labeled_label_paths(root_dir)
@@ -120,6 +131,7 @@ class LabeledDataset(torch.utils.data.Dataset):
 
         self.class_index = load_class_index()
         self.transform = transform
+        self.load_image = load_image
 
         # TODO(pscollins): Add an option to prefetch into memory for faster
         # loading.
@@ -135,7 +147,8 @@ class LabeledDataset(torch.utils.data.Dataset):
     # where N is the number of bounding boxes in the specified image.
     def __getitem__(self, idx):
         image_path, label_path = self.examples_by_index[idx]
-        image_tensor = torchvision.io.read_image(image_path)
+        # image_tensor = torchvision.io.read_image(image_path)
+        image_tensor = self.load_image(image_path)
 
         with open(label_path, 'r') as f:
             labels = parse_labels(f.read())
@@ -152,14 +165,16 @@ class LabeledDataset(torch.utils.data.Dataset):
 # Returns crops from the labeled dataset corresponding to a single bounding
 # box. For images containing multiple bounding boxes, a random one is chosen.
 class ClassifierDataset(torch.utils.data.Dataset):
-    def __init__(self, root_dir, inner_transform=lambda *x: x,
+    def __init__(self, root_dir, load_image=torchvision.io.read_image,
+                 inner_transform=lambda *x: x,
                  outer_transform=lambda x: x, dataset_factory=LabeledDataset):
         # inner_transform must have the signature for LabeledDataset's transform.
         #
         # outer_transform must have the signature
         #   (image_tensor) -> (image_tensor)
         self.labeled_dataset = dataset_factory(root_dir,
-                                              transform=inner_transform)
+                                               load_image=load_image,
+                                               transform=inner_transform)
         self.outer_transform = outer_transform
 
     def __len__(self):
@@ -209,7 +224,8 @@ class UnlabeledDataset(torch.utils.data.Dataset):
         # work around corrupt images in input
         while True:
             try:
-                img = torchvision.io.read_image(path)
+                # img = torchvision.io.read_image(path)
+                img = self.read_image(path)
                 break
             except:
                 print(f'WARNING: corrupt image at {path}')
@@ -217,7 +233,6 @@ class UnlabeledDataset(torch.utils.data.Dataset):
                 path = self.image_paths[torch.randint(low=0, high=len(self.image_paths),
                                                       size=(1,))[0]]
 
-        img = self.read_image(path)
         img = self.transform(img)
         augmented = self.augment(img)
         return (augmented, img)

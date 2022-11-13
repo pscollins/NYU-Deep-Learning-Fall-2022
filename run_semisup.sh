@@ -1,6 +1,7 @@
+set -x
+
 python -m torch.distributed.launch --nproc_per_node=1 swav/eval_semisup.py \
-       --use_imagenet=False \
-       --train_data_path=data/labeled_data/training \
+       --train_data_path data/labeled_data/training \
        --val_data_path=data/labeled_data/training \
        --data_path /mnt/sdc/code/ml_datasets/imagenet/data/train.X1/ \
        --pretrained_from_hub=True  \
