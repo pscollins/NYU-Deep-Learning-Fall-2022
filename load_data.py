@@ -135,6 +135,7 @@ class UnlabeledDataset(torch.utils.data.Dataset):
         # sort for determinism
         if root_dir is None:
             root_dir = UNLABLED_DATA_ROOT
+        # TODO(pscollins): shuffle?
         self.image_paths = list(sorted(_get_relative_paths_below(root_dir)))
         self.transform = transform
         self.augment = augment
@@ -149,7 +150,18 @@ class UnlabeledDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         path = self.image_paths[idx]
-        # img = torchvision.io.read_image(path)
+
+        # work around corrupt images in input
+        while True:
+            try:
+                img = torchvision.io.read_image(path)
+                break
+            except:
+                print(f'WARNING: corrupt image at {path}')
+                # use a different, random image instead to work around corruption
+                path = self.image_paths[torch.randint(low=0, high=len(self.image_paths),
+                                                      size=(1,))[0]]
+
         img = self.read_image(path)
         img = self.transform(img)
         augmented = self.augment(img)
