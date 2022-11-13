@@ -22,6 +22,9 @@ import torch.optim
 # import apex
 from shim.larc import LARC
 
+# import torch_xla
+# import torch_xla.core.xla_model as xm
+
 from src.utils import (
     bool_flag,
     initialize_exp,
@@ -32,6 +35,8 @@ from src.utils import (
 )
 from src.multicropdataset import MultiCropDataset
 import src.resnet50 as resnet_models
+
+device = torch.device('cuda')
 
 logger = getLogger()
 
@@ -163,7 +168,8 @@ def main():
         # model = apex.parallel.convert_syncbn_model(model, process_group=process_group)
         raise NotImplementedError("apex support is removed")
     # copy model to GPU
-    model = model.cuda()
+    # model = model.cuda()
+    model = model.to(device)
     if args.rank == 0:
         logger.info(model)
     logger.info("Building model done.")
@@ -227,11 +233,16 @@ def main():
 
         # optionally starts a queue
         if args.queue_length > 0 and epoch >= args.epoch_queue_starts and queue is None:
+            # queue = torch.zeros(
+            #     len(args.crops_for_assign),
+            #     args.queue_length // args.world_size,
+            #     args.feat_dim,
+            # ).cuda()
             queue = torch.zeros(
                 len(args.crops_for_assign),
                 args.queue_length // args.world_size,
                 args.feat_dim,
-            ).cuda()
+            ).to(device)
 
         # train the network
         scores, queue = train(train_loader, model, optimizer, epoch, lr_schedule, queue)
