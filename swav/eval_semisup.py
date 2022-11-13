@@ -92,7 +92,11 @@ def main():
     )
 
     # build data
-    train_data_path = os.path.join(args.data_path, "train")
+    if "train" in args.data_path:
+        train_data_path = args.data_path
+    else:
+        print(f"Doesn't look like training path: {args.data_path}, appending /train")
+        train_data_path = os.path.join(args.data_path, "train")
     train_dataset = datasets.ImageFolder(train_data_path)
     # take either 1% or 10% of images
     subset_file = urllib.request.urlopen("https://raw.githubusercontent.com/google-research/simclr/master/imagenet_subsets/" + str(args.labels_perc) + "percent.txt")
