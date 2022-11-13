@@ -20,6 +20,14 @@ import torch.utils.data as data
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 
+# HACK: import from parent directory
+#
+# we need to run from the root directory of the repo for this to work
+import sys
+sys.path.insert(0, '.')
+# from ... import load_data
+import load_data
+
 from src.utils import (
     bool_flag,
     initialize_exp,
@@ -48,12 +56,20 @@ parser.add_argument("--data_path", type=str, default="/path/to/imagenet",
                     help="path to imagenet")
 parser.add_argument("--workers", default=10, type=int,
                     help="number of data loading workers")
+parser.add_argument("--use_imagenet", type=bool, default=True,
+                    help="use imagenet vs crop-based data")
+parser.add_argument("--train_data_path", type=str, default='.',
+                    help="path to crop-based training data")
+parser.add_argument("--val_data_path", type=str, default='.',
+                    help="path to crop-based validation data")
 
 #########################
 #### model parameters ###
 #########################
 parser.add_argument("--arch", default="resnet50", type=str, help="convnet architecture")
 parser.add_argument("--pretrained", default="", type=str, help="path to pretrained weights")
+parser.add_argument("--pretrained_from_hub", default=False, type=bool,
+                    help="if true, loads pretrained model from torch hub, per https://github.com/facebookresearch/swav#model-zoo")
 
 #########################
 #### optim parameters ###
@@ -82,21 +98,13 @@ parser.add_argument("--local_rank", default=0, type=int,
                     help="this argument is not used and should be ignored")
 
 
-def main():
-    global args, best_acc
-    args = parser.parse_args()
-    init_distributed_mode(args)
-    fix_random_seeds(args.seed)
-    logger, training_stats = initialize_exp(
-        args, "epoch", "loss", "prec1", "prec5", "loss_val", "prec1_val", "prec5_val"
-    )
+# resize target for cropped images, to match what resnet expects
+INPUT_H_W = (224, 224)
 
+# original code, kept for infrastructure testing
+def build_imagenet_loaders(args):
     # build data
-    if "train" in args.data_path:
-        train_data_path = args.data_path
-    else:
-        print(f"Doesn't look like training path: {args.data_path}, appending /train")
-        train_data_path = os.path.join(args.data_path, "train")
+    train_data_path = os.path.join(args.data_path, "train")
     train_dataset = datasets.ImageFolder(train_data_path)
     # take either 1% or 10% of images
     subset_file = urllib.request.urlopen("https://raw.githubusercontent.com/google-research/simclr/master/imagenet_subsets/" + str(args.labels_perc) + "percent.txt")
@@ -135,6 +143,76 @@ def main():
         num_workers=args.workers,
         pin_memory=True,
     )
+    return train_loader, val_loader
+
+def build_cropped_loaders(args):
+    train_data_path = args.train_data_path
+    val_data_path = args.val_data_path
+
+    resize = torchvision.transforms.Resize(size=INPUT_H_W, antialias=True)
+    normalize = transforms.Normalize(
+        mean=[0.485, 0.456, 0.406], std=[0.228, 0.224, 0.225]
+    )
+
+    train_transforms = transforms.Compose([
+        resize,
+        # TODO(pscollins): Experiment with this
+        transforms.RandAugment(num_ops=4),
+        transforms.ToTensor(),
+        normalize
+    ])
+    val_transforms = transforms.Compose([
+        resize,
+        transforms.ToTensor(),
+        normalize
+    ])
+
+    train_dataset = load_data.ClassifierDataset(
+        root_dir=args.train_data_path,
+        outer_transforms=train_transforms)
+    val_dataset = load_data.ClassifierDataset(
+        root_dir=args.val_data_path,
+        outer_transforms=val_transforms)
+
+    sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        sampler=sampler,
+        batch_size=args.batch_size,
+        num_workers=args.workers,
+        pin_memory=True,
+    )
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset,
+        batch_size=args.batch_size,
+        num_workers=args.workers,
+        pin_memory=True,
+    )
+
+    return train_loader, val_loader
+
+
+
+
+
+
+
+
+
+def main():
+    global args, best_acc
+    args = parser.parse_args()
+    init_distributed_mode(args)
+    fix_random_seeds(args.seed)
+    logger, training_stats = initialize_exp(
+        args, "epoch", "loss", "prec1", "prec5", "loss_val", "prec1_val", "prec5_val"
+    )
+
+    if args.use_imagenet:
+        train_loader, val_loader = build_imagenet_loaders(args)
+    else:
+        train_loader, val_loader = build_cropped_loaders(args)
+
     logger.info("Building data done with {} images loaded.".format(len(train_dataset)))
 
     # build model
@@ -158,6 +236,8 @@ def main():
                 state_dict[k] = v
         msg = model.load_state_dict(state_dict, strict=False)
         logger.info("Load pretrained model with msg: {}".format(msg))
+    else if args.pretrained_from_hub:
+        model = torch.hub.load('facebookresearch/swav:main', args.arch)
     else:
         logger.info("No pretrained weights found => training from random weights")
 
