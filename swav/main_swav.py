@@ -22,6 +22,8 @@ import torch.optim
 # import apex
 from shim.larc import LARC
 
+from .. import load_data
+
 # import torch_xla
 # import torch_xla.core.xla_model as xm
 
@@ -47,6 +49,10 @@ parser = argparse.ArgumentParser(description="Implementation of SwAV")
 #########################
 parser.add_argument("--data_path", type=str, default="/path/to/imagenet",
                     help="path to dataset repository")
+parser.add_argument("--use_unlabled_dataset", type=bool, default=False,
+                    help="if true, use our custom dataloader")
+parser.add_argument("--unlabled_dataset_path", type=str, defualt=None,
+                    help="if provided, a path to our custom unlabled dataset.")
 parser.add_argument("--nmb_crops", type=int, default=[2], nargs="+",
                     help="list of number of crops (example: [2, 6])")
 parser.add_argument("--size_crops", type=int, default=[224], nargs="+",
@@ -133,13 +139,23 @@ def main():
     logger, training_stats = initialize_exp(args, "epoch", "loss")
 
     # build data
-    train_dataset = MultiCropDataset.from_path(
-        args.data_path,
-        args.size_crops,
-        args.nmb_crops,
-        args.min_scale_crops,
-        args.max_scale_crops,
-    )
+    if args.use_unlabeled_dataset:
+        ds = load_data.UnlabeledDataset(root_dir=args.unlabeled_dataset_path)
+        train_dataset = MultiCropDataset(
+            ds,
+            args.size_crops,
+            args.nmb_crops,
+            args.min_scale_crops,
+            args.max_scale_crops,
+        )
+    else:
+        train_dataset = MultiCropDataset.from_path(
+            args.data_path,
+            args.size_crops,
+            args.nmb_crops,
+            args.min_scale_crops,
+            args.max_scale_crops,
+        )
     sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
     train_loader = torch.utils.data.DataLoader(
         train_dataset,

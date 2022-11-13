@@ -103,7 +103,6 @@ class LabeledDataset(torch.utils.data.Dataset):
         # TODO(pscollins): Add an option to prefetch into memory for faster
         # loading.
 
-
     def __len__(self):
         return len(self.examples_by_index)
 
@@ -133,6 +132,8 @@ class UnlabeledDataset(torch.utils.data.Dataset):
     # transform and augment
     def __init__(self, root_dir=UNLABLED_DATA_ROOT, transform=lambda x: x, augment=lambda x: x):
         # sort for determinism
+        if root_dir is None:
+            root_dir = UNLABLED_DATA_ROOT
         self.image_paths = list(sorted(_get_relative_paths_below(root_dir)))
         self.transform = transform
         self.augment = augment
