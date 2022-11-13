@@ -25,7 +25,7 @@ class MultiCropDataset:
         nmb_crops,
         min_scale_crops,
         max_scale_crops,
-        size_dataset=-1,
+        # size_dataset=-1,
         return_index=False,
     ):
         # super(MultiCropDataset, self).__init__(data_path)
@@ -33,9 +33,9 @@ class MultiCropDataset:
         assert len(size_crops) == len(nmb_crops)
         assert len(min_scale_crops) == len(nmb_crops)
         assert len(max_scale_crops) == len(nmb_crops)
-        if size_dataset >= 0:
-            # self.samples = self.samples[:size_dataset]
-            self.delegate.samples = self.delegate.samples[:size_dataset]
+        # if size_dataset >= 0:
+        #     # self.samples = self.samples[:size_dataset]
+        #     self.delegate.samples = self.delegate.samples[:size_dataset]
         self.return_index = return_index
 
         color_transform = [get_color_distortion(), PILRandomGaussianBlur()]
@@ -61,13 +61,18 @@ class MultiCropDataset:
                   size_dataset=-1, return_index=False):
         print(f'{data_path=}')
         delegate = datasets.ImageFolder(data_path)
-        return MultiCropDataset(delegate, size_crops, nmb_crops, min_scale_crops,
-                                max_scale_crops, size_dataset, return_index)
 
+        if size_dataset >= 0:
+            # trim the underlying dataloader
+            delegate.samples = delegate.samples[:size_dataset]
+
+        return MultiCropDataset(delegate, size_crops, nmb_crops, min_scale_crops,
+                                max_scale_crops, return_index)
 
     def __getitem__(self, index):
-        path, _ = self.delegate.samples[index]
-        image = self.delegate.loader(path)
+        # path, _ = self.delegate.samples[index]
+        # image = self.delegate.loader(path)
+        image, unused_target = self.delegate[index]
         multi_crops = list(map(lambda trans: trans(image), self.trans))
         if self.return_index:
             return index, multi_crops
