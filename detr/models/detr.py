@@ -17,6 +17,13 @@ from .segmentation import (DETRsegm, PostProcessPanoptic, PostProcessSegm,
                            dice_loss, sigmoid_focal_loss)
 from .transformer import build_transformer
 
+# HACK: import from parent directory
+#
+# we need to run from the root directory of the repo for this to work
+import sys
+sys.path.insert(0, '.')
+import load_data
+
 
 class DETR(nn.Module):
     """ This is the DETR module that performs object detection """
@@ -310,7 +317,15 @@ def build(args):
     # you should pass `num_classes` to be 2 (max_obj_id + 1).
     # For more details on this, check the following discussion
     # https://github.com/facebookresearch/detr/issues/108#issuecomment-650269223
-    num_classes = 20 if args.dataset_file != 'coco' else 91
+    if args.dataset_file == 'coco':
+        num_classes = 91
+    elif args.dataset_file == 'custom_cocolike':
+        num_classes = max(load_data.load_class_index().values()) + 1
+        print(f'Calculated num classes for cocolike: {num_classes}')
+    else:
+        num_classes = 20
+
+    # num_classes = 20 if args.dataset_file != 'coco' else 91
     if args.dataset_file == "coco_panoptic":
         # for panoptic, we just add a num_classes that is large enough to hold
         # max_obj_id + 1, but the exact value doesn't really matter

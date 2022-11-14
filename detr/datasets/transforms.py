@@ -51,7 +51,8 @@ def crop(image, target, region):
             keep = target['masks'].flatten(1).any(1)
 
         for field in fields:
-            target[field] = target[field][keep]
+            if field in target:
+                target[field] = target[field][keep]
 
     return cropped_image, target
 
@@ -77,7 +78,6 @@ def resize(image, target, size, max_size=None):
     # size can be min_size (scalar) or (w, h) tuple
 
     def get_size_with_aspect_ratio(image_size, size, max_size=None):
-        print(f'{image_size=}')
         w, h = image_size
         if max_size is not None:
             min_original_size = float(min((w, h)))
