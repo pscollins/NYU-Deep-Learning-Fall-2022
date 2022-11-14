@@ -3,6 +3,7 @@
 Backbone modules.
 """
 from collections import OrderedDict
+import os
 
 import torch
 import torch.nn.functional as F
@@ -12,6 +13,13 @@ from torchvision.models._utils import IntermediateLayerGetter
 from typing import Dict, List
 
 from util.misc import NestedTensor, is_main_process
+
+# HACK: import from parent directory
+#
+# we need to run from the root directory of the repo for this to work
+import sys
+sys.path.insert(0, '.')
+from swav.src import utils as swav_utils
 
 from .position_encoding import build_position_encoding
 
@@ -92,6 +100,29 @@ class Backbone(BackboneBase):
         num_channels = 512 if name in ('resnet18', 'resnet34') else 2048
         super().__init__(backbone, train_backbone, num_channels, return_interm_layers)
 
+class SWaVBackbone(BackboneBase):
+    """ResNet backbone trained via SWaV"""
+    def __init__(self, name: str,
+                 train_backbone: bool,
+                 return_interm_layers: bool,
+                 dilation: bool,
+                 args):
+        # TODO(pscollins): actually use arch?
+        backbone = getattr(torchvision.models, name)(
+            replace_stride_with_dilation=[False, False, dilation],
+            pretrained=is_main_process(), norm_layer=FrozenBatchNorm2d)
+        if os.path.isfile(args.swav_checkpoint_path):
+            # just take the model state and ignore the rest of the training
+            # checkpoint
+            swav_utils.restart_from_checkpoint(
+                args.swav_checkpoint_path,
+                state_dict=backbone)
+            # TODO(pscollins): use model params rather than training checkpoint
+        else:
+            raise ValueError(f'SWaV training checkpoint does not exist: {args.swav_checkpoint_path}')
+
+        num_channels = 512 if name in ('resnet18', 'resnet34') else 2048
+        super().__init__(backbone, train_backbone, num_channels, return_interm_layers)
 
 class Joiner(nn.Sequential):
     def __init__(self, backbone, position_embedding):
@@ -113,7 +144,10 @@ def build_backbone(args):
     position_embedding = build_position_encoding(args)
     train_backbone = args.lr_backbone > 0
     return_interm_layers = args.masks
-    backbone = Backbone(args.backbone, train_backbone, return_interm_layers, args.dilation)
+    if args.swav_model_arch:
+        backbone = SWaVBackbone(args.backbone, train_backbone, return_interm_layers, args.dilation, args)
+    else:
+        backbone = Backbone(args.backbone, train_backbone, return_interm_layers, args.dilation)
     model = Joiner(backbone, position_embedding)
     model.num_channels = backbone.num_channels
     return model

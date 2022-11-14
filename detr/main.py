@@ -39,6 +39,13 @@ def get_args_parser():
     parser.add_argument('--position_embedding', default='sine', type=str, choices=('sine', 'learned'),
                         help="Type of positional embedding to use on top of the image features")
 
+    parser.add_argument('--swav_model_arch', default='', type=str,
+                        help='if nonempty, use SWaV-resnet rather than torchvision.')
+    parser.add_argument('--swav_checkpoint_path', default='', type=str,
+                        help='if --swav_model_arch is set, restore model from this checkpoint.')
+    # TODO(pscollins): restore from params alone, not full training checkpoint
+
+
     # * Transformer
     parser.add_argument('--enc_layers', default=6, type=int,
                         help="Number of encoding layers in the transformer")
