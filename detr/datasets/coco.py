@@ -13,6 +13,14 @@ from pycocotools import mask as coco_mask
 
 import datasets.transforms as T
 
+# HACK: import from parent directory
+#
+# we need to run from the root directory of the repo for this to work
+import sys
+sys.path.insert(0, '.')
+# from ... import load_data
+import load_data
+
 
 class CocoDetection(torchvision.datasets.CocoDetection):
     def __init__(self, img_folder, ann_file, transforms, return_masks):
@@ -156,3 +164,20 @@ def build(image_set, args):
     img_folder, ann_file = PATHS[image_set]
     dataset = CocoDetection(img_folder, ann_file, transforms=make_coco_transforms(image_set), return_masks=args.masks)
     return dataset
+
+
+def build_cocolike(image_set, args):
+    root = Path(args.custom_cocolike_root)
+    assert root.exists(), f'provided COCOlike path {root} does not exist'
+    mode = 'instances'
+    path = {
+        "train": root / "training",
+        "val": root / "validation",
+    }[image_set]
+    # img_folder, ann_file = PATHS[image_set]
+    # dataset = CocoDetection(img_folder, ann_file, transforms=make_coco_transforms(image_set), return_masks=args.masks)
+    inner_ds = load_data.LabeledDataset(root_dir=path, transform=make_coco_transforms(image_set))
+    coco_ds = load_data.DetrCocoWrapper(inner_ds)
+    return coco_ds
+
+    # return dataset

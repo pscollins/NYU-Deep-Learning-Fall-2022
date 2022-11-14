@@ -239,8 +239,13 @@ class UnlabeledDataset(torch.utils.data.Dataset):
 
 
 class DetrCocoWrapper(torch.utils.data.Dataset):
-    def __init__(self, labeled_dataset):
+    # transform has the signature
+    #   (image, target_dict) ->
+    #     (image, target_dict)
+    def __init__(self, labeled_dataset, transform=lambda *x: x):
         self.labeled_dataset = labeled_dataset
+        self.transform = transform
+
 
     def __len__(self):
         return len(self.labeled_dataset)
@@ -260,4 +265,4 @@ class DetrCocoWrapper(torch.utils.data.Dataset):
             }
 
         # ([C, H, W], {...})
-        return (image, target)
+        return self.transform(image, target)
