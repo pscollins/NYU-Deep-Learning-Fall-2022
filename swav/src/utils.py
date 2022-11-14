@@ -6,6 +6,7 @@
 #
 
 import argparse
+import logging
 from logging import getLogger
 import pickle
 import os
@@ -106,10 +107,14 @@ def initialize_exp(params, *args, dump_params=True):
     return logger, training_stats
 
 
-def restart_from_checkpoint(ckp_paths, run_variables=None, **kwargs):
+def restart_from_checkpoint(ckp_paths, run_variables=None, preprocess_state_dict_fn=lambda x: x,
+                            **kwargs):
     """
     Re-start from checkpoint
     """
+    # HACK: SET LOGGER UP HERE
+    logger.setLevel(logging.DEBUG)
+
     # look for a checkpoint in exp repository
     if isinstance(ckp_paths, list):
         for ckp_path in ckp_paths:
@@ -133,11 +138,14 @@ def restart_from_checkpoint(ckp_paths, run_variables=None, **kwargs):
     # example: {'state_dict': model}
     for key, value in kwargs.items():
         if key in checkpoint and value is not None:
-            try:
-                msg = value.load_state_dict(checkpoint[key], strict=False)
-                print(msg)
-            except TypeError:
-                msg = value.load_state_dict(checkpoint[key])
+            state_dict = preprocess_state_dict_fn(checkpoint[key])
+            msg = value.load_state_dict(state_dict, strict=False)
+            print('RESTART FROM CHECKPOINT: ', msg)
+            # try:
+            #     msg = value.load_state_dict(checkpoint[key], strict=False)
+            #     print(msg)
+            # except TypeError:
+            #     msg = value.load_state_dict(checkpoint[key])
             logger.info("=> loaded {} from checkpoint '{}'".format(key, ckp_path))
         else:
             logger.warning(
