@@ -18,7 +18,6 @@ import datasets.transforms as T
 # we need to run from the root directory of the repo for this to work
 import sys
 sys.path.insert(0, '.')
-# from ... import load_data
 import load_data
 
 
@@ -60,6 +59,7 @@ class ConvertCocoPolysToMask(object):
         self.return_masks = return_masks
 
     def __call__(self, image, target):
+        # TODO(pscollins): is this flipped?
         w, h = image.size
 
         image_id = target["image_id"]
