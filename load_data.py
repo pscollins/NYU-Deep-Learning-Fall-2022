@@ -236,3 +236,28 @@ class UnlabeledDataset(torch.utils.data.Dataset):
         img = self.transform(img)
         augmented = self.augment(img)
         return (augmented, img)
+
+
+class DetrCocoWrapper(torch.utils.data.Dataset):
+    def __init__(self, labeled_dataset):
+        self.labeled_dataset = labeled_dataset
+
+    def __len__(self):
+        return len(self.labeled_dataset)
+
+    def __getitem__(self, idx):
+        image, bboxes, classes = self.labeled_dataset[idx]
+        assert bboxes.shape[0] == classes.shape[0]
+
+        # just fill in what's needed for
+        # https://github.com/facebookresearch/detr/blob/8a144f83a287f4d3fece4acdf073f387c5af387d/models/detr.py#L83
+        target = {
+            'image_id': torch.tensor(idx),
+            # [N, 4]
+            'boxes': bboxes,
+            # [N]
+            'labels': classes
+            }
+
+        # ([C, H, W], {...})
+        return (image, target)

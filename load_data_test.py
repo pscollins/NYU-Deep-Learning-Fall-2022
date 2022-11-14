@@ -228,6 +228,40 @@ labels:
             self.assertLessEqual(224, min(img.shape[1:]))
 
 
+    def test_detr_codo_wrapper(self):
+        fake_ds = {
+            0: (
+                # image
+                torch.ones((3, 10, 10)),
+                # bboxes
+                torch.ones((4, 10)),
+                # classes
+                torch.ones(4),
+            ),
+            2: (
+                # image
+                torch.zeros((3, 10, 10)),
+                # bboxes
+                torch.zeros((4, 10)),
+                # classes
+                torch.zeros(4),
+            )
+            }
+
+        ds = load_data.DetrCocoWrapper(fake_ds)
+
+
+        img_0, target_0 = ds[0]
+        self.assertEqual(target_0['image_id'], 0)
+        torch.testing.assert_close(img_0, fake_ds[0][0])
+        torch.testing.assert_close(target_0['boxes'], fake_ds[0][1])
+        torch.testing.assert_close(target_0['labels'], fake_ds[0][2])
+
+        img_2, target_2 = ds[2]
+        self.assertEqual(target_2['image_id'], 2)
+        torch.testing.assert_close(img_2, fake_ds[2][0])
+        torch.testing.assert_close(target_2['boxes'], fake_ds[2][1])
+        torch.testing.assert_close(target_2['labels'], fake_ds[2][2])
 
 
 
