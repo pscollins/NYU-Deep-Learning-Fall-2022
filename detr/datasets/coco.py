@@ -175,9 +175,11 @@ def build_cocolike(image_set, args):
         "val": root / "validation",
     }[image_set]
     # img_folder, ann_file = PATHS[image_set]
-    # dataset = CocoDetection(img_folder, ann_file, transforms=make_coco_transforms(image_set), return_masks=args.masks)
-    inner_ds = load_data.LabeledDataset(root_dir=path, transform=make_coco_transforms(image_set))
-    coco_ds = load_data.DetrCocoWrapper(inner_ds)
+    # inner_ds = load_data.LabeledDataset(root_dir=path)
+    inner_ds = load_data.LabeledDataset(root_dir=path, load_image=load_data.pil_loader)
+    # the transforms need to be applied to the wrapped version since they can
+    # modify e.g. the bboxes
+    coco_ds = load_data.DetrCocoWrapper(inner_ds, transform=make_coco_transforms(image_set))
     return coco_ds
 
     # return dataset
