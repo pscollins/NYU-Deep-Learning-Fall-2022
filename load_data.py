@@ -3,6 +3,7 @@ from typing import List
 import collections
 import os
 
+import PIL
 import torch
 import torchvision
 import dataclasses
@@ -254,6 +255,12 @@ class DetrCocoWrapper(torch.utils.data.Dataset):
         image, bboxes, classes = self.labeled_dataset[idx]
         assert bboxes.shape[0] == classes.shape[0]
 
+        if isinstance(image, torch.Tensor):
+            c, h, w = image.shape
+        else:
+            assert isinstance(image, PIL.Image.Image)
+            w, h = image.size
+
         # just fill in what's needed for
         # https://github.com/facebookresearch/detr/blob/8a144f83a287f4d3fece4acdf073f387c5af387d/models/detr.py#L83
         target = {
@@ -261,7 +268,9 @@ class DetrCocoWrapper(torch.utils.data.Dataset):
             # [N, 4]
             'boxes': bboxes,
             # [N]
-            'labels': classes
+            'labels': classes,
+            # for compatibility with 'evaluate' in engine.py
+            'orig_size': torch.tensor([h, w])
             }
 
         # ([C, H, W], {...})

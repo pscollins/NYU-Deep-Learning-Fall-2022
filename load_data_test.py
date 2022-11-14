@@ -240,7 +240,7 @@ labels:
             ),
             2: (
                 # image
-                torch.zeros((3, 10, 10)),
+                torch.zeros((3, 10, 11)),
                 # bboxes
                 torch.zeros((4, 10)),
                 # classes
@@ -256,12 +256,16 @@ labels:
         torch.testing.assert_close(img_0, fake_ds[0][0])
         torch.testing.assert_close(target_0['boxes'], fake_ds[0][1])
         torch.testing.assert_close(target_0['labels'], fake_ds[0][2])
+        torch.testing.assert_close(target_0['orig_size'], torch.tensor([10, 10]))
+
 
         img_2, target_2 = ds[2]
         self.assertEqual(target_2['image_id'], 2)
         torch.testing.assert_close(img_2, fake_ds[2][0])
         torch.testing.assert_close(target_2['boxes'], fake_ds[2][1])
         torch.testing.assert_close(target_2['labels'], fake_ds[2][2])
+        torch.testing.assert_close(target_2['orig_size'], torch.tensor([10, 11]))
+        # TODO(pscollins): test for PIL case
 
 
     def test_detr_coco_wrapper_transform(self):

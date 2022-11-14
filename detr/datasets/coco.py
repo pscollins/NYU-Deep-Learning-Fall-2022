@@ -6,10 +6,11 @@ Mostly copy-paste from https://github.com/pytorch/vision/blob/13b35ff/references
 """
 from pathlib import Path
 
+from pycocotools import mask as coco_mask
+import PIL
 import torch
 import torch.utils.data
 import torchvision
-from pycocotools import mask as coco_mask
 
 import datasets.transforms as T
 
@@ -59,7 +60,8 @@ class ConvertCocoPolysToMask(object):
         self.return_masks = return_masks
 
     def __call__(self, image, target):
-        # TODO(pscollins): is this flipped?
+        # this is a PIL image rather than a tensor
+        assert isinstance(image, PIL.Image.Image)
         w, h = image.size
 
         image_id = target["image_id"]
@@ -165,6 +167,18 @@ def build(image_set, args):
     dataset = CocoDetection(img_folder, ann_file, transforms=make_coco_transforms(image_set), return_masks=args.masks)
     return dataset
 
+# def prepare_target(target):
+#     image_id = target['image_id']
+#     labels = target['labels']
+#     boxes = target['boxes']
+#     new_target = {
+#         'image_id': image_id,
+#         'annotations': [{
+
+
+#             }]
+#     }
+
 
 def build_cocolike(image_set, args):
     root = Path(args.custom_cocolike_root)
@@ -177,9 +191,16 @@ def build_cocolike(image_set, args):
     # img_folder, ann_file = PATHS[image_set]
     # inner_ds = load_data.LabeledDataset(root_dir=path)
     inner_ds = load_data.LabeledDataset(root_dir=path, load_image=load_data.pil_loader)
+    # ConvertCocoPolysToMask is responsible for populating some fields that are
+    # used during evaluation (like orig_size). It expects a PIL iamge as input.
+    converter = ConvertCocoPolysToMask(return_masks=False)
     # the transforms need to be applied to the wrapped version since they can
     # modify e.g. the bboxes
-    coco_ds = load_data.DetrCocoWrapper(inner_ds, transform=make_coco_transforms(image_set))
+    transforms = make_coco_transforms(image_set)
+    # def do_transforms(image, target):
+    #     return transforms(*converter(image, target))
+    # coco_ds = load_data.DetrCocoWrapper(inner_ds, transform=do_transforms)
+    coco_ds = load_data.DetrCocoWrapper(inner_ds, transform=transforms)
     return coco_ds
 
     # return dataset
