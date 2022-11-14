@@ -114,9 +114,8 @@ class SWaVBackbone(BackboneBase):
         if os.path.isfile(args.swav_checkpoint_path):
             # just take the model state and ignore the rest of the training
             # checkpoint
-            #
-            # following https://gist.github.com/mathildecaron31/bcd03b8864f7ca1aeb89dfe76a118b14#file-backbone-py-L92-L101
             def clean_state_dict(state_dict):
+                # following https://gist.github.com/mathildecaron31/bcd03b8864f7ca1aeb89dfe76a118b14#file-backbone-py-L92-L101
                 return {k.replace("module.", ""): v for k, v in state_dict.items()}
 
             swav_utils.restart_from_checkpoint(
