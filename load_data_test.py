@@ -293,6 +293,24 @@ labels:
         torch.testing.assert_close(target_0['boxes'], torch.ones((4, 10)) * 2)
 
 
+    def test_boxes_to_coco(self):
+        image = torch.ones((1, 10, 10))
+        target = {
+            'boxes': torch.tensor([
+                [0, 0, 1, 1],
+                [1, 1, 2, 2],
+                ])
+            }
+
+        transformed_image, transformed_target = load_data.bboxes_to_coco(image, target)
+
+        torch.testing.assert_close(transformed_image, image)
+        expected_boxes = torch.tensor([
+            [0, 0, 1, 1],
+            [1, 1, 1, 1],
+            ])
+        torch.testing.assert_close(transformed_target['boxes'], expected_boxes)
+
 
 
 if __name__ == '__main__':
