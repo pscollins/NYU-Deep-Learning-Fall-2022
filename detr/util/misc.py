@@ -441,9 +441,9 @@ def accuracy(output, target, topk=(1,)):
     pred = pred.t()
     correct = pred.eq(target.view(1, -1).expand_as(pred))
 
-    print('Pred: ', pred)
-    print('Target: ', target)
-    print('Correct: ', correct)
+    # print('Pred: ', pred)
+    # print('Target: ', target)
+    # print('Correct: ', correct)
 
     res = []
     for k in topk:
