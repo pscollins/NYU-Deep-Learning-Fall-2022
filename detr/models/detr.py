@@ -228,6 +228,9 @@ class SetCriterion(nn.Module):
         """
         outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs'}
 
+        # print('outputs: ', outputs)
+        # print('targets: ', targets)
+
         # Retrieve the matching between the outputs of the last layer and the targets
         indices = self.matcher(outputs_without_aux, targets)
 

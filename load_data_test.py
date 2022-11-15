@@ -299,6 +299,7 @@ labels:
             'boxes': torch.tensor([
                 [0, 0, 1, 1],
                 [1, 1, 2, 2],
+                [0, 0, 2, 3]
                 ])
             }
 
@@ -308,6 +309,7 @@ labels:
         expected_boxes = torch.tensor([
             [0, 0, 1, 1],
             [1, 1, 1, 1],
+            [0, 0, 2, 3],
             ])
         torch.testing.assert_close(transformed_target['boxes'], expected_boxes)
 

@@ -196,7 +196,28 @@ def build_cocolike(image_set, args):
     converter = ConvertCocoPolysToMask(return_masks=False)
     # the transforms need to be applied to the wrapped version since they can
     # modify e.g. the bboxes
-    transforms = make_coco_transforms(image_set)
+    def compose(transforms):
+        def do_transforms(img, target):
+            for t in transforms:
+                img, target = t(img, target)
+            return img, target
+        return do_transforms
+
+    # transforms = compose([
+    #     # # x0y0x1y1 -> x0y0wh
+    #     # load_data.bboxes_to_coco,
+    #     make_coco_transforms(image_set),
+    #     ])
+
+    transforms = compose([
+        make_coco_transforms(image_set),
+        ])
+    # transforms = torchvision.transforms.Compose([
+    #     # x0y0x1y1 -> x0y0wh
+    #     load_data.bboxes_to_coco,
+    #     make_coco_transforms(image_set),
+    #     ])
+    # transforms = make_coco_transforms(image_set)
     # def do_transforms(image, target):
     #     return transforms(*converter(image, target))
     # coco_ds = load_data.DetrCocoWrapper(inner_ds, transform=do_transforms)

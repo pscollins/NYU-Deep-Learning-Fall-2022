@@ -242,8 +242,8 @@ class UnlabeledDataset(torch.utils.data.Dataset):
 def bboxes_to_coco(image, target):
     # https://github.com/cocodataset/cocoapi/issues/102
     x0, y0, x1, y1 = target['boxes'].unbind(-1)
-    assert torch.all(x0 <= x1)
-    assert torch.all(y0 <= y1)
+    # assert torch.all(x0 <= x1)
+    # assert torch.all(y0 <= y1)
     target['boxes'] = torch.stack((x0, y0, x1 - x0, y1 - y0), dim=-1)
     return image, target
 
