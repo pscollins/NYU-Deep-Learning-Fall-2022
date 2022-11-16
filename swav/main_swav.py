@@ -128,6 +128,8 @@ parser.add_argument("--rank", default=0, type=int, help="""rank of this process:
                     it is set automatically and should not be passed as argument""")
 parser.add_argument("--local_rank", default=0, type=int,
                     help="this argument is not used and should be ignored")
+parser.add_argument('--no_use_dist', default=False, action='store_true',
+                    help='if set, trains in the local process')
 
 #########################
 #### other parameters ###
@@ -152,7 +154,8 @@ parser.add_argument("--seed", type=int, default=31, help="seed")
 def main():
     global args
     args = parser.parse_args()
-    init_distributed_mode(args)
+    if not args.no_use_dist:
+        init_distributed_mode(args)
     fix_random_seeds(args.seed)
     logger, training_stats = initialize_exp(args, "epoch", "loss")
 
@@ -180,7 +183,12 @@ def main():
             args.min_scale_crops,
             args.max_scale_crops,
         )
-    sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    if args.no_use_dist:
+        # pass
+        sampler = torch.utils.data.RandomSampler(train_dataset)
+    else:
+        sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         sampler=sampler,
@@ -198,8 +206,8 @@ def main():
         output_dim=args.feat_dim,
         nmb_prototypes=args.nmb_prototypes,
     )
-    # synchronize batch norm layers
-    if args.sync_bn == "pytorch":
+    # synchronize batch norm layers (if distributed training requested)
+    if args.sync_bn == "pytorch" and not args.no_use_dist:
         model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
     elif args.sync_bn == "apex":
         # with apex syncbn we sync bn per group because it speeds up computation
@@ -236,11 +244,21 @@ def main():
     #     model, optimizer = torch.amp.initialize(model, optimizer, opt_level="O1")
     #     logger.info("Initializing mixed precision done.")
 
-    # wrap model
-    model = nn.parallel.DistributedDataParallel(
-        model,
-        device_ids=[args.gpu_to_work_on]
-    )
+    # wrap model (if distributed training is requested)
+    if not args.no_use_dist:
+        model = nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=[args.gpu_to_work_on]
+        )
+        # monkey patch to provide a consistent API
+        def get_module():
+            return model.module
+        model.get_module = get_module
+    else:
+        def get_module():
+            return model
+        model.get_module = get_module
+
 
     # optionally resume from a checkpoint
     to_restore = {"epoch": 0}
@@ -269,7 +287,8 @@ def main():
         logger.info("============ Starting epoch %i ... ============" % epoch)
 
         # set sampler
-        train_loader.sampler.set_epoch(epoch)
+        if not args.no_use_dist:
+            train_loader.sampler.set_epoch(epoch)
 
         # optionally starts a queue
         if args.queue_length > 0 and epoch >= args.epoch_queue_starts and queue is None:
@@ -330,9 +349,11 @@ def train(train_loader, model, optimizer, epoch, lr_schedule, queue):
 
         # normalize the prototypes
         with torch.no_grad():
-            w = model.module.prototypes.weight.data.clone()
+            w = model.get_module().prototypes.weight.data.clone()
+            # w = model.module.prototypes.weight.data.clone()
             w = nn.functional.normalize(w, dim=1, p=2)
-            model.module.prototypes.weight.copy_(w)
+            # model.module.prototypes.weight.copy_(w)
+            model.get_module().prototypes.weight.copy_(w)
 
         # ============ multi-res forward passes ... ============
         embedding, output = model(inputs)
@@ -358,7 +379,7 @@ def train(train_loader, model, optimizer, epoch, lr_schedule, queue):
                     queue[i, :bs] = embedding[crop_id * bs: (crop_id + 1) * bs]
 
                 # get assignments
-                q = distributed_sinkhorn(out)[-bs:]
+                q = distributed_sinkhorn(out, args.no_use_dist)[-bs:]
 
             # cluster assignment prediction
             subloss = 0
@@ -406,20 +427,24 @@ def train(train_loader, model, optimizer, epoch, lr_schedule, queue):
 
 
 @torch.no_grad()
-def distributed_sinkhorn(out):
+def distributed_sinkhorn(out, no_use_dist):
     Q = torch.exp(out / args.epsilon).t() # Q is K-by-B for consistency with notations from our paper
     B = Q.shape[1] * args.world_size # number of samples to assign
     K = Q.shape[0] # how many prototypes
 
+    # print('{no_use_dist=}')
+
     # make the matrix sums to 1
     sum_Q = torch.sum(Q)
-    dist.all_reduce(sum_Q)
+    if not no_use_dist:
+        dist.all_reduce(sum_Q)
     Q /= sum_Q
 
     for it in range(args.sinkhorn_iterations):
         # normalize each row: total weight per prototype must be 1/K
         sum_of_rows = torch.sum(Q, dim=1, keepdim=True)
-        dist.all_reduce(sum_of_rows)
+        if not no_use_dist:
+            dist.all_reduce(sum_of_rows)
         Q /= sum_of_rows
         Q /= K
 
