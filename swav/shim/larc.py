@@ -35,11 +35,12 @@ class LARC(object):
         eps: epsilon kludge to help with numerical stability while calculating adaptive_lr
     """
 
-    def __init__(self, optimizer, trust_coefficient=0.02, clip=True, eps=1e-8):
+    def __init__(self, optimizer, trust_coefficient=0.02, clip=True, eps=1e-8, stepper=lambda x: x.step()):
         self.optim = optimizer
         self.trust_coefficient = trust_coefficient
         self.eps = eps
         self.clip = clip
+        self.stepper = stepper
 
     def __getstate__(self):
         return self.optim.__getstate__()
@@ -75,9 +76,12 @@ class LARC(object):
         self.optim.add_param_group( param_group)
 
     def step(self):
+        # print('LARC step')
         with torch.no_grad():
             weight_decays = []
+            idx = 0
             for group in self.optim.param_groups:
+                # print('visit param group ', idx)
                 # absorb weight decay control from optimizer
                 weight_decay = group['weight_decay'] if 'weight_decay' in group else 0
                 weight_decays.append(weight_decay)
@@ -100,7 +104,112 @@ class LARC(object):
                         p.grad.data += weight_decay * p.data
                         p.grad.data *= adaptive_lr
 
+        # self.optim.step()
+        self.steper(self.optim)
+        # return weight decay control to optimizer
+        for i, group in enumerate(self.optim.param_groups):
+            group['weight_decay'] = weight_decays[i]
+
+
+class LARCXla(object):
+    """
+    Like above, but XLA-friendly
+    """
+
+    def __init__(self, optimizer, trust_coefficient=0.02, clip=True, eps=1e-8, stepper=lambda x: x.step(), device=None):
+        self.optim = optimizer
+        # device = next(optimizer.parameters()).device
+        self.device = device
+        self.trust_coefficient = torch.tensor(trust_coefficient, device=device)
+        self.eps = torch.tensor(eps, device=device)
+        self.clip = clip
+        self.stepper = stepper
+
+    def __getstate__(self):
+        return self.optim.__getstate__()
+
+    def __setstate__(self, state):
+        self.optim.__setstate__(state)
+
+    @property
+    def state(self):
+        return self.optim.state
+
+    def __repr__(self):
+        return self.optim.__repr__()
+
+    @property
+    def param_groups(self):
+        return self.optim.param_groups
+
+    @param_groups.setter
+    def param_groups(self, value):
+        self.optim.param_groups = value
+
+    def state_dict(self):
+        return self.optim.state_dict()
+
+    def load_state_dict(self, state_dict):
+        self.optim.load_state_dict(state_dict)
+
+    def zero_grad(self):
+        self.optim.zero_grad()
+
+    def add_param_group(self, param_group):
+        self.optim.add_param_group( param_group)
+
+    def step(self):
+        # print('LARC step')
+        with torch.no_grad():
+            weight_decays = []
+            idx = 0
+            zero = torch.zeros(1, device=self.device)
+            for group in self.optim.param_groups:
+                # print('visit param group ', idx)
+                # absorb weight decay control from optimizer
+                weight_decay = group['weight_decay'] if 'weight_decay' in group else 0
+                weight_decays.append(weight_decay)
+                group['weight_decay'] = 0
+                for p in group['params']:
+                    if p.grad is None:
+                        continue
+                    param_norm = torch.norm(p.data)
+                    # grad_norm = torch.norm(p.grad.data)
+                    grad_norm = torch.norm(p.grad.data)
+
+                    # print('param norm: ', param_norm)
+                    # print('grad norm: ', grad_norm)
+
+                    want_new_grad = (param_norm != zero) & (grad_norm != zero)
+                    adaptive_lr = self.trust_coefficient * (param_norm) / (grad_norm + param_norm * weight_decay + self.eps)
+
+                    if self.clip:
+                        adpative_lr = adaptive_lr / group['lr']
+                        adaptive_lr = torch.min(adaptive_lr, torch.ones(1, device=self.device))
+
+                    p.grad.data = torch.where(want_new_grad,
+                                              p.grad.data + weight_decay * p.data,
+                                              p.grad.data)
+                    p.grad.data = torch.where(want_new_grad, p.grad.data * adaptive_lr, p.grad.data)
+
+                    # if self.clip:
+                    #     # calculation of adaptive_lr so that when multiplied by lr it equals `min(adaptive_lr, lr)`
+                    #     adaptive_lr = min(adaptive_lr/group['lr'], 1)
+
+                    # if param_norm != 0 and grad_norm != 0:
+                        # # calculate adaptive lr + weight decay
+                        # adaptive_lr = self.trust_coefficient * (param_norm) / (grad_norm + param_norm * weight_decay + self.eps)
+
+                        # # clip learning rate for LARC
+                        # if self.clip:
+                        #     # calculation of adaptive_lr so that when multiplied by lr it equals `min(adaptive_lr, lr)`
+                        #     adaptive_lr = min(adaptive_lr/group['lr'], 1)
+
+                        # p.grad.data += weight_decay * p.data
+                        # p.grad.data *= adaptive_lr
+
         self.optim.step()
+        # self.steper(self.optim)
         # return weight decay control to optimizer
         for i, group in enumerate(self.optim.param_groups):
             group['weight_decay'] = weight_decays[i]

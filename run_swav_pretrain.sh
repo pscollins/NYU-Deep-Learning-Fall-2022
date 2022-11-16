@@ -12,4 +12,4 @@ python  -m torch.distributed.launch --nproc_per_node=1 swav/main_swav.py \
 --use_fp16 false \
 --freeze_prototypes_niters 5005 \
 --queue_length 3840 \
---epoch_queue_starts 15 --use_unlabeled_dataset=true --dump_path=/tmp/exp_out
+--epoch_queue_starts 15 --use_unlabeled_dataset=true --dump_path=/tmp/exp_out 

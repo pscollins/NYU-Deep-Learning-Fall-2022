@@ -19,8 +19,9 @@ import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.optim
+
 # import apex
-from shim.larc import LARC
+from shim.larc import LARC, LARCXla
 
 # HACK: import from parent directory
 #
@@ -49,12 +50,17 @@ import src.resnet50 as resnet_models
 
 try:
     import torch_xla
-    import torch_xla.core.xla_mode as xm
+    import torch_xla.core.xla_model as xm
 
+    have_xla = True
     device = xm.xla_device()
-except ImportError:
-    print('pytorch/xla not found!')
+
+
+    import torch_xla.debug.profiler as xp
+except ImportError as e:
+    print('pytorch/xla not found!: ', e)
     device = torch.device('cuda')
+    have_xla = False
 
 print('Set up device: ', device)
 
@@ -159,6 +165,9 @@ def main():
     fix_random_seeds(args.seed)
     logger, training_stats = initialize_exp(args, "epoch", "loss")
 
+    if have_xla:
+        server = xp.start_server(1234)
+
     # build data
     # if False:
     if args.use_unlabeled_dataset:
@@ -194,7 +203,8 @@ def main():
         sampler=sampler,
         batch_size=args.batch_size,
         num_workers=args.workers,
-        pin_memory=True,
+        # pin_memory=True,
+        pin_memory=not have_xla,
         drop_last=True
     )
     logger.info("Building data done with {} images loaded.".format(len(train_dataset)))
@@ -229,7 +239,25 @@ def main():
         momentum=0.9,
         weight_decay=args.wd,
     )
-    optimizer = LARC(optimizer=optimizer, trust_coefficient=0.001, clip=False)
+    if have_xla:
+        print('setting optim')
+        # # shim
+        # optimizer.optim = optimizer
+        optimizer = LARCXla(optimizer=optimizer, trust_coefficient=0.001, clip=False, device=device)
+    else:
+        # LARC tries to look at the gradients before doing the optimizer step,
+        # but the gradients aren't availble yet
+        optimizer = LARC(optimizer=optimizer, trust_coefficient=0.001, clip=False)
+
+    # if have_xla:
+    #     optimizer = LARC(optimizer=optimizer, trust_coefficient=0.001, clip=False, stepper=xm.optimizer_step)
+    # else:
+    #     optimizer = LARC(optimizer=optimizer, trust_coefficient=0.001, clip=False)
+    # if have_xla:
+    #     optimizer = LARCXla(optimizer=optimizer, trust_coefficient=0.001, clip=False, device=device)
+    # else:
+    #     optimizer = LARC(optimizer=optimizer, trust_coefficient=0.001, clip=False)
+
     warmup_lr_schedule = np.linspace(args.start_warmup, args.base_lr, len(train_loader) * args.warmup_epochs)
     iters = np.arange(len(train_loader) * (args.epochs - args.warmup_epochs))
     cosine_lr_schedule = np.array([args.final_lr + 0.5 * (args.base_lr - args.final_lr) * (1 + \
@@ -311,8 +339,10 @@ def main():
         if args.rank == 0:
             save_dict = {
                 "epoch": epoch + 1,
-                "state_dict": model.state_dict(),
-                "optimizer": optimizer.state_dict(),
+                "state_dict": model.cpu().state_dict(),
+                "optimizer": optimizer.cpu().state_dict(),
+                # "state_dict": model.state_dict(),
+                # "optimizer": optimizer.state_dict(),
             }
             if args.use_fp16:
                 save_dict["amp"] = torch.amp.state_dict()
@@ -342,6 +372,8 @@ def train(train_loader, model, optimizer, epoch, lr_schedule, queue):
         # measure data loading time
         data_time.update(time.time() - end)
 
+        # print(f'start {it=}')
+
         # update learning rate
         iteration = epoch * len(train_loader) + it
         for param_group in optimizer.param_groups:
@@ -356,13 +388,16 @@ def train(train_loader, model, optimizer, epoch, lr_schedule, queue):
             model.get_module().prototypes.weight.copy_(w)
 
         # ============ multi-res forward passes ... ============
+        # print('invoke model')
         embedding, output = model(inputs)
+        # print('finished invoking model')
         embedding = embedding.detach()
         bs = inputs[0].size(0)
 
         # ============ swav loss ... ============
         loss = 0
         for i, crop_id in enumerate(args.crops_for_assign):
+            # print(f'calculate loss, step {i}')
             with torch.no_grad():
                 out = output[bs * crop_id: bs * (crop_id + 1)].detach()
 
@@ -387,9 +422,11 @@ def train(train_loader, model, optimizer, epoch, lr_schedule, queue):
                 x = output[bs * v: bs * (v + 1)] / args.temperature
                 subloss -= torch.mean(torch.sum(q * F.log_softmax(x, dim=1), dim=1))
             loss += subloss / (np.sum(args.nmb_crops) - 1)
+            # print(f'done loss step {i}')
         loss /= len(args.crops_for_assign)
 
         # ============ backward and optim step ... ============
+        # print('start backward')
         optimizer.zero_grad()
         if args.use_fp16:
             # with torch.amp.scale_loss(loss, optimizer) as scaled_loss:
@@ -397,12 +434,23 @@ def train(train_loader, model, optimizer, epoch, lr_schedule, queue):
                 scaled_loss.backward()
         else:
             loss.backward()
+        # print('done backward')
         # cancel gradients for the prototypes
         if iteration < args.freeze_prototypes_niters:
             for name, p in model.named_parameters():
                 if "prototypes" in name:
                     p.grad = None
+        # print('going to optimizer step')
+        # if have_xla:
+        #     xm.optimizer_step(optimizer)
+        # else:
         optimizer.step()
+        # print('done optimizer step')
+        if have_xla:
+            # print('going to mark step')
+            xm.mark_step()
+            # print('marked step')
+        # print('done optimizer step')
 
         # ============ misc ... ============
         losses.update(loss.item(), inputs[0].size(0))
