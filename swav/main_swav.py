@@ -47,7 +47,16 @@ from src.utils import (
 from src.multicropdataset import MultiCropDataset
 import src.resnet50 as resnet_models
 
-device = torch.device('cuda')
+try:
+    import torch_xla
+    import torch_xla.core.xla_mode as xm
+
+    device = xm.xla_device()
+except ImportError:
+    print('pytorch/xla not found!')
+    device = torch.device('cuda')
+
+print('Set up device: ', device)
 
 logger = getLogger()
 
