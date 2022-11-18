@@ -238,6 +238,17 @@ class UnlabeledDataset(torch.utils.data.Dataset):
         augmented = self.augment(img)
         return (augmented, img)
 
+class PrefetchingDataset(torch.utils.data.Dataset):
+    def __init__(self, delegate):
+        self.entries = [
+            img for augmented, img in delegate
+        ]
+
+    def __len__(self):
+        return len(self.entries)
+
+    def __getitem__(self, idx):
+        return self.entries[idx]
 
 def bboxes_to_coco(image, target):
     # https://github.com/cocodataset/cocoapi/issues/102

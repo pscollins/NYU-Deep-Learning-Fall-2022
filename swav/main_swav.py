@@ -9,6 +9,8 @@ import math
 import os
 import shutil
 import time
+import logging
+import sys
 from logging import getLogger
 
 import numpy as np
@@ -43,6 +45,7 @@ from src.utils import (
     restart_from_checkpoint,
     fix_random_seeds,
     AverageMeter,
+    XLAAverageMeter,
     init_distributed_mode,
 )
 from src.multicropdataset import MultiCropDataset
@@ -55,8 +58,8 @@ try:
     have_xla = True
     device = xm.xla_device()
 
-
-    import torch_xla.debug.profiler as xp
+    # import torch_xla.debug.profiler as xp
+    # import torch_xla.debug.metrics as met
 except ImportError as e:
     print('pytorch/xla not found!: ', e)
     device = torch.device('cuda')
@@ -85,6 +88,9 @@ parser.add_argument("--min_scale_crops", type=float, default=[0.14], nargs="+",
                     help="argument in RandomResizedCrop (example: [0.14, 0.05])")
 parser.add_argument("--max_scale_crops", type=float, default=[1], nargs="+",
                     help="argument in RandomResizedCrop (example: [1., 0.14])")
+
+parser.add_argument('--do_prefetching', default=False, action='store_true',
+                    help='prefetch image data into memory')
 
 #########################
 ## swav specific params #
@@ -165,8 +171,20 @@ def main():
     fix_random_seeds(args.seed)
     logger, training_stats = initialize_exp(args, "epoch", "loss")
 
-    if have_xla:
-        server = xp.start_server(1234)
+    # logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.DEBUG)
+    logging.getLogger().addHandler(handler)
+
+
+
+    # suppress spam
+    logging.getLogger('PIL').setLevel(logging.WARNING)
+
+
+
+    # if have_xla:
+    #     server = xp.start_server(1234)
 
     # build data
     # if False:
@@ -177,6 +195,10 @@ def main():
             f.load()
             return f
         ds = load_data.UnlabeledDataset(root_dir=args.unlabeled_dataset_path, read_image=read_image)
+        if args.do_prefetching:
+            print('prefetching!')
+            ds = load_data.PrefetchingDataset(ds)
+
         train_dataset = MultiCropDataset(
             ds,
             args.size_crops,
@@ -335,12 +357,23 @@ def main():
         scores, queue = train(train_loader, model, optimizer, epoch, lr_schedule, queue)
         training_stats.update(scores)
 
+        # def dict_to_cpu(d):
+        #     if isinstance(d, dict):
+        #         return {k: dict_to_cpu(v) for k, v in d.items()}
+        #     elif isinstance(d, list):
+        #         return [dict_to_cpu(x) for x in d]
+        #     else:
+        #         return d.cpu()
+
         # save checkpoints
         if args.rank == 0:
             save_dict = {
                 "epoch": epoch + 1,
                 "state_dict": model.cpu().state_dict(),
-                "optimizer": optimizer.cpu().state_dict(),
+                "optimizer": optimizer.state_dict(),
+                # "optimizer": optimizer.optim.cpu().state_dict()
+                # "state_dict": model.cpu().state_dict(),
+                # "optimizer": optimizer.cpu().state_dict(),
                 # "state_dict": model.state_dict(),
                 # "optimizer": optimizer.state_dict(),
             }
@@ -358,11 +391,13 @@ def main():
         if queue is not None:
             torch.save({"queue": queue}, queue_path)
 
+        model = model.to(device)
 
 def train(train_loader, model, optimizer, epoch, lr_schedule, queue):
+    print('start training')
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    losses = AverageMeter()
+    losses = XLAAverageMeter(device)
 
     model.train()
     use_the_queue = False
@@ -453,7 +488,8 @@ def train(train_loader, model, optimizer, epoch, lr_schedule, queue):
         # print('done optimizer step')
 
         # ============ misc ... ============
-        losses.update(loss.item(), inputs[0].size(0))
+        # losses.update(loss.item(), inputs[0].size(0))
+        losses.update(loss, inputs[0].size(0))
         batch_time.update(time.time() - end)
         end = time.time()
         if args.rank ==0 and it % 50 == 0:
@@ -471,6 +507,9 @@ def train(train_loader, model, optimizer, epoch, lr_schedule, queue):
                     lr=optimizer.optim.param_groups[0]["lr"],
                 )
             )
+            # if have_xla:
+                # print(met.metrics_report())
+                # logger.debug(met.metrics_report())
     return (epoch, losses.avg), queue
 
 

@@ -187,6 +187,38 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
+class XLAAverageMeter(object):
+    """Like AverageMeter, but avoids copies."""
+
+    def __init__(self, device):
+        self.device = device
+        self.reset()
+
+    def reset(self):
+        # self.val = 0
+        # self.avg = 0
+        # self.sum = 0
+        # self.count = 0
+        zero = torch.zeros((1,), device=self.device, requires_grad=False)
+        self._val = zero.clone()
+        self._avg = zero.clone()
+        self.sum = zero.clone()
+        self.count = zero.clone()
+
+    def update(self, val, n=1):
+        self._val = val
+        self.sum += val * n
+        self.count += n
+        self._avg = self.sum / self.count
+
+    @property
+    def val(self):
+        return self._val.item()
+
+    @property
+    def avg(self):
+        return self._avg.item()
+
 def accuracy(output, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""
     with torch.no_grad():
