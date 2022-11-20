@@ -26,12 +26,16 @@ def custom_setup(args):
     """
     detectron2_datasets.register_coco_instances(
         name="nyu_dl_train", metadata={},
-        json_file="data/labeled_data/annotations_training.json",
+        json_file="data/annotations/annotations_training.json",
         image_root="data/labeled_data/training/images")
     detectron2_datasets.register_coco_instances(
         name="nyu_dl_val", metadata={},
-        json_file="data/labeled_data/annotations_validation.json",
+        json_file="data/annotations/annotations_validation.json",
         image_root="data/labeled_data/validation/images")
+    detectron2_datasets.register_coco_instances(
+        name="nyu_dl_unlabeled", metadata={},
+        json_file="data/annotations/annotations_unlabeled.json",
+        image_root="data/unlabeled_data/")
 
 
 
