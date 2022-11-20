@@ -148,7 +148,6 @@ class LabeledDataset(torch.utils.data.Dataset):
     # where N is the number of bounding boxes in the specified image.
     def __getitem__(self, idx):
         image_path, label_path = self.examples_by_index[idx]
-        # image_tensor = torchvision.io.read_image(image_path)
         image_tensor = self.load_image(image_path)
 
         with open(label_path, 'r') as f:
@@ -294,3 +293,113 @@ class DetrCocoWrapper(torch.utils.data.Dataset):
 
         # ([C, H, W], {...})
         return self.transform(image, target)
+
+
+# Builds a dictionary correspondsing to the object detection format described in
+# https://cocodataset.org/#format-data for the specified dataset.
+class CocoAnnotationBuilder:
+    # ds: LabeledDataset
+    def __init__(self, ds):
+        self.image_id = -1
+        self.annotation_id = -1
+        self.ds = ds
+
+    # Loads `idx` from the dataset and converts the resulting (image_tensor,
+    # bboxes_tensor, class_tensor) into a pair
+    #
+    #   (coco_image, coco_annotations)
+    #
+    # where coco_iamge is a dictionary satisfying the "image" COCO annotation,
+    # and coco_annotations is a list of dictionaries satisfying the "annotation"
+    # COCO annotation format.
+    def build_idx(self, idx):
+        image_path, _ = self.ds.examples_by_index[idx]
+        image, bboxes, classes = self.ds[idx]
+        self.image_id += 1
+
+        c, h, w = image.shape
+        coco_image = {
+            'id': self.image_id,
+            'width': w,
+            'height': h,
+            'file_name': os.path.basename(image_path),
+            'license': 0,
+            'flickr_url': '',
+            'coco_url': '',
+            # arbitrary date picked from coco2017val.json
+            'date_captured': '2013-11-14 17:02:52'
+        }
+        return (coco_image, self._build_annotations(bboxes, classes))
+
+    def _build_annotations(self, bboxes, classes):
+        assert bboxes.shape[0] == classes.shape[0]
+        def tensors_to_floats(ts):
+            return [float(t) for t in ts]
+
+        def bbox_to_coco(bbox):
+            assert list(bbox.shape) == [4], f'Unexpected bbox shape: {bbox.shape}'
+            x0, y0, x1, y1 = tensors_to_floats(bbox)
+            # assert torch.all(x0 <= x1)
+            # assert torch.all(y0 <= y1)
+            # x0, y0, w, h
+            return [x0, y0, x1 - x0, y1 - y0]
+
+        def area(bbox):
+            _, _, w, h = bbox_to_coco(bbox)
+            return float(w * h)
+
+
+        def build_annotation(bbox, cls):
+            self.annotation_id += 1
+            return {
+                'id': self.annotation_id,
+                'image_id': self.image_id,
+                'category_id': cls.item(),
+                'segmentation': [],
+                'bbox': bbox_to_coco(bbox),
+                'area': area(bbox),
+                'iscrowd': 0
+            }
+
+        return [
+            build_annotation(bbox, cls)
+            for bbox, cls
+            in zip(bboxes, classes)
+        ]
+
+    def _build_categories(self):
+        return [
+            {
+                'id': key,
+                'name': value,
+                'supercategory': value,
+            }
+            for key, value in load_inverted_class_index().items()
+        ]
+
+    def build_coco(self):
+        images_and_annotation_lists = [
+            self.build_idx(idx) for idx
+            in range(len(self.ds))
+        ]
+        images, annotation_lists = zip(*images_and_annotation_lists)
+        coco = {
+            'info': {
+                'year': 2022,
+                'version': '',
+                'description': '',
+                'contributor': '',
+                'url': '',
+                # arbitrary date picked from coco2017val.json
+                'date_created': '2013-11-14 17:02:52'
+                },
+            'licenses': [{
+                'id': 0,
+                'name': '',
+                'url': ''
+            }],
+            'images': images,
+            'annotations': sum(annotation_lists, []),
+            'categories': self._build_categories(),
+        }
+        return coco

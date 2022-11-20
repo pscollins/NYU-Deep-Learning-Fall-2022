@@ -313,6 +313,96 @@ labels:
             ])
         torch.testing.assert_close(transformed_target['boxes'], expected_boxes)
 
+    def test_coco_annotation_builder(self):
+        ds = load_data.LabeledDataset(load_data.TRAINING_DATA_ROOT)
+        # trim to first 5
+        ds.examples_by_index = ds.examples_by_index[:5]
+
+        coco_builder = load_data.CocoAnnotationBuilder(ds)
+
+        result = coco_builder.build_coco()
+
+        want_keys = list(sorted(["info", "images", "annotations",
+                                 "licenses", "categories"]))
+        self.assertEqual(want_keys, list(sorted(result.keys())))
+
+        images = result['images']
+        self.assertEqual(len(images), 5)
+        annotations = result['annotations']
+        self.assertLessEqual(len(images), len(annotations))
+
+        class_index = load_data.load_class_index()
+
+        for want_id, image in enumerate(images):
+            self.assertEqual(image['id'], want_id)
+            # filenames start from 1.JPEG
+            self.assertEqual(image['file_name'], f'{want_id+1}.JPEG')
+            want_id
+
+        for want_id, annotation in enumerate(annotations):
+            self.assertEqual(want_id, annotation['id'])
+            # verify that the corresponding image exists
+            img = result['images'][annotation['image_id']]
+            img_h = img['height']
+            img_w = img['width']
+            x, y, w, h = annotation['bbox']
+            self.assertLessEqual(0, x)
+            self.assertLessEqual(0, y)
+            self.assertLess(0, w)
+            self.assertLess(0, h)
+
+            self.assertLess(x, img_w)
+            self.assertLess(x + w, img_w)
+            self.assertLess(y, img_h)
+            self.assertLess(y + h, img_h)
+
+            category = result['categories'][annotation['category_id']]
+            self.assertIn(category['name'], class_index)
+            self.assertIn(category['supercategory'], class_index)
+
+
+    def test_build_coco_annotaiton(self):
+        class FakeDataset:
+            def __init__(self):
+                self.examples_by_index = [("my/image/path.jpeg", "")]
+                self._loaded_examples = [
+                    (
+                        torch.ones((1, 20, 30)), # image
+                        torch.tensor([ # bboxes
+                            [0, 0, 1, 1],
+                            [1, 1, 2, 2],
+                            [0, 1, 1, 2],
+                        ]),
+                        torch.tensor([1, 2, 3]) # classes
+                    ),
+                ]
+            def __len__(self):
+                return len(self._loaded_examples)
+
+            def __getitem__(self, idx):
+                return self._loaded_examples[idx]
+
+        coco_builder = load_data.CocoAnnotationBuilder(FakeDataset())
+
+        image, annotations = coco_builder.build_idx(0)
+
+        self.assertEqual(image['width'], 30)
+        self.assertEqual(image['height'], 20)
+        self.assertEqual(image['file_name'], 'path.jpeg')
+
+        self.assertEqual(3, len(annotations))
+        want_bboxes = [
+            [0, 0, 1, 1],
+            [1, 1, 1, 1],
+            [0, 1, 1, 1],
+        ]
+        want_classes = [1, 2, 3]
+        want_area = [1, 1, 1, 1]
+        for idx, annotation in enumerate(annotations):
+            self.assertEqual(annotation['bbox'], want_bboxes[idx])
+            self.assertEqual(annotation['category_id'], want_classes[idx])
+            self.assertEqual(annotation['area'], float(want_area[idx]))
+
 
 
 if __name__ == '__main__':
