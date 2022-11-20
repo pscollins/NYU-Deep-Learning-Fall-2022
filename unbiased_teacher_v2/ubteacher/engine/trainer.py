@@ -49,8 +49,7 @@ class UBTeacherTrainer(DefaultTrainer):
         model = self.build_model(cfg)
         optimizer = self.build_optimizer(cfg, model)
 
-        if args is not None and args.num_gpus == 0:
-            # Reuse num_gpus == 0 to mean "train on CPU"
+        if args is not None and args.use_cpu:
             model = model.cpu()
 
         # create an teacher model
@@ -628,8 +627,7 @@ class UBRCNNTeacherTrainer(DefaultTrainer):
         model = self.build_model(cfg)
         optimizer = self.build_optimizer(cfg, model)
 
-        if args is not None and args.num_gpus == 0:
-            # Reuse num_gpus == 0 to mean "train on CPU"
+        if args is not None and args.use_cpu:
             model = model.cpu()
 
         # create an teacher model

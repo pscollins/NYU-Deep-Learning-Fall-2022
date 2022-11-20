@@ -16,6 +16,8 @@ def build_argument_parser():
     parser = default_argument_parser()
     parser.add_argument('--disable-amp', action='store_true',
                         help='Override YAML setting for AMP, to enable CPU training.')
+    parser.add_argument('--use-cpu', action='store_true',
+                        help='Train on CPU rather than GPU.')
     return parser
 
 def custom_setup(args):
