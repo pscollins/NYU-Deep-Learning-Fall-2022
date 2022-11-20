@@ -4,18 +4,32 @@
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
 from detectron2.engine import default_argument_parser, default_setup, launch
+from detectron2.data import datasets as detectron2_datasets
 
 # hacky way to register
 from ubteacher.modeling import *
 from ubteacher.engine import *
 from ubteacher import add_ubteacher_config
 
+def custom_setup(args):
+    """
+    Nonstandard configuration for our environment.
+    """
+    detectron2_datasets.register_coco_instances(
+        name="nyu_dl_train", metadata={},
+        json_file="data/labeled_data/annotations_training.json",
+        image_root="data/labeled_data/training/images")
+    detectron2_datasets.register_coco_instances(
+        name="nyu_dl_val", metadata={},
+        json_file="data/labeled_data/annotations_validation.json",
+        image_root="data/labeled_data/validation/images")
 
 
 def setup(args):
     """
     Create configs and perform basic setups.
     """
+    custom_setup(args)
     cfg = get_cfg()
     add_ubteacher_config(cfg)
     cfg.merge_from_file(args.config_file)

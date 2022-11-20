@@ -669,6 +669,10 @@ class UBRCNNTeacherTrainer(DefaultTrainer):
         Args:
             resume (bool): whether to do resume or not
         """
+        print('resume_or_load, resume={resume}')
+        if not os.path.isfile(self.cfg.MODEL.WEIGHTS):
+            print(f'Weights checkpoint does not exist: {self.cfg.MODEL.WEIGHTS}. Skipping load.')
+            return
         checkpoint = self.checkpointer.resume_or_load(
             self.cfg.MODEL.WEIGHTS, resume=resume
         )

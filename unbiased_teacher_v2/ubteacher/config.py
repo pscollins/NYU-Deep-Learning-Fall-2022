@@ -55,14 +55,14 @@ def add_ubteacher_config(cfg):
     # supervision level
     _C.DATALOADER.SUP_PERCENT = 100.0  # 5 = 5% dataset as labeled set
     _C.DATALOADER.RANDOM_DATA_SEED = 0  # random seed to read data
-    fb_path = (
-        "manifold://mobile_vision_dataset/tree/unbiased_teacher/COCO_supervision.txt"
-    )
-    local_path = "dataseed/COCO_supervision.txt"
-    if os.path.isfile(local_path):
-        _C.DATALOADER.RANDOM_DATA_SEED_PATH = local_path
-    else:
-        _C.DATALOADER.RANDOM_DATA_SEED_PATH = fb_path
+    # fb_path = (
+    #     "manifold://mobile_vision_dataset/tree/unbiased_teacher/COCO_supervision.txt"
+    # )
+    # local_path = "dataseed/COCO_supervision.txt"
+    # if os.path.isfile(local_path):
+    #     _C.DATALOADER.RANDOM_DATA_SEED_PATH = local_path
+    # else:
+    #     _C.DATALOADER.RANDOM_DATA_SEED_PATH = fb_path
     _C.EMAMODEL = CN()
     _C.EMAMODEL.SUP_CONSIST = True
 

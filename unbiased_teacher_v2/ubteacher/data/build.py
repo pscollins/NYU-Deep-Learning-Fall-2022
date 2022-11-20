@@ -2,6 +2,7 @@
 import json
 import logging
 import operator
+import random
 
 import numpy as np
 import torch.utils.data
@@ -25,6 +26,20 @@ from ubteacher.data.common import AspectRatioGroupedSemiSupDatasetTwoCrop
 """
 This file contains the default logic to build a dataloader for training or testing.
 """
+
+def divide_label_unlabel_nofile(
+    dataset_dicts, SupPercent
+):
+    label_dicts = []
+    unlabel_dicts = []
+
+    for i, dataset_dict in enumerate(dataset_dicts):
+        if random.random() * 100 < SupPercent:
+            label_dicts.append(dataset_dicts[i])
+        else:
+            unlabel_dicts.append(dataset_dicts[i])
+
+    return label_dicts, unlabel_dicts
 
 
 def divide_label_unlabel(
@@ -176,12 +191,19 @@ def build_detection_semisup_train_loader_two_crops(cfg, mapper=None):
         )
 
         # Divide into labeled and unlabeled sets according to supervision percentage
-        label_dicts, unlabel_dicts = divide_label_unlabel(
-            dataset_dicts,
-            cfg.DATALOADER.SUP_PERCENT,
-            cfg.DATALOADER.RANDOM_DATA_SEED,
-            cfg.DATALOADER.RANDOM_DATA_SEED_PATH,
-        )
+        if hasattr(cfg.DATALOADER, 'RANDOM_DATA_SEED_PATH'):
+            label_dicts, unlabel_dicts = divide_label_unlabel(
+                dataset_dicts,
+                cfg.DATALOADER.SUP_PERCENT,
+                cfg.DATALOADER.RANDOM_DATA_SEED,
+                cfg.DATALOADER.RANDOM_DATA_SEED_PATH,
+            )
+        else:
+            # RANDOM_DATA_SEED_PATH
+            label_dicts, unlabel_dicts = divide_label_unlabel_nofile(
+                dataset_dicts,
+                cfg.DATALOADER.SUP_PERCENT,
+            )
 
     label_dataset = DatasetFromList(label_dicts, copy=False)
     # exclude the labeled set from unlabeled dataset
