@@ -298,6 +298,8 @@ class DetrCocoWrapper(torch.utils.data.Dataset):
 # Builds a dictionary correspondsing to the object detection format described in
 # https://cocodataset.org/#format-data for the specified dataset.
 class CocoAnnotationBuilder:
+    LOG_EVERY_N = 100
+
     # ds: LabeledDataset
     def __init__(self, ds):
         self.image_id = -1
@@ -316,6 +318,9 @@ class CocoAnnotationBuilder:
         image_path, _ = self.ds.examples_by_index[idx]
         image, bboxes, classes = self.ds[idx]
         self.image_id += 1
+
+        if (self.image_id % self.LOG_EVERY_N) == 0:
+            print(f'Processing image #{self.image_id}')
 
         c, h, w = image.shape
         coco_image = {
