@@ -15,6 +15,7 @@ MODEL:
   ROI_HEADS:
     NAME: "StandardROIHeadsPseudoLab"
     LOSS: "FocalLoss_BoundaryVar"
+    NUM_CLASSES: 100  # override COCO default of 80
   ROI_BOX_HEAD:
     BBOX_REG_LOSS_TYPE: "nlloss"
     CLS_AGNOSTIC_BBOX_REG: True

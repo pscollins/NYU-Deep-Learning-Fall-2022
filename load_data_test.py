@@ -404,6 +404,63 @@ labels:
             self.assertEqual(annotation['area'], float(want_area[idx]))
 
 
+    def test_unlabeled_dataset_shim(self):
+        ds = load_data.UnlabeledDatasetLabelShim(root_dir=load_data.UNLABLED_DATA_ROOT)
+
+        img, bboxes, classes = ds[0]
+
+        self.assertEqual(img.dim(), 3)
+        # C, H, W
+        self.assertEqual(img.shape[0], 3)
+        # No classes, no bboxes
+        self.assertEqual(list(bboxes.shape), [0])
+        self.assertEqual(list(classes.shape), [0])
+
+
+    def test_build_unlabled_annotations(self):
+        ds = load_data.UnlabeledDatasetLabelShim(root_dir=load_data.UNLABLED_DATA_ROOT)
+        # Just keep a few images, for quicker tests.
+        ds.examples_by_index = ds.examples_by_index[:5]
+        coco_builder = load_data.CocoAnnotationBuilder(ds)
+
+        result = coco_builder.build_coco()
+
+        self.assertEqual(len(result['images']), 5)
+        # No annotations for this dataset
+        self.assertEqual(len(result['annotations']), 0)
+
+
+    def test_handle_corrupt_input(self):
+        class FakeDataset:
+            def __init__(self):
+                self.examples_by_index = [("my/image/path.jpeg", "")] * 3
+                self._loaded_examples = [
+                    (
+                        torch.ones((1, 20, 30)), # image
+                        torch.tensor([ # bboxes
+                            [0, 0, 1, 1],
+                            [1, 1, 2, 2],
+                            [0, 1, 1, 2],
+                        ]),
+                        torch.tensor([1, 2, 3]) # classes
+                    ),
+                ] * 3
+            def __len__(self):
+                return len(self._loaded_examples)
+
+            def __getitem__(self, idx):
+                if idx == 1:
+                    raise ValueError('Corrupt image!')
+                return self._loaded_examples[idx]
+
+        coco_builder = load_data.CocoAnnotationBuilder(FakeDataset())
+        results = coco_builder.build_coco()
+
+        # Verify that the corrupt image in the middle was dropped
+        self.assertEqual(2, len(results['images']))
+        self.assertEqual(6, len(results['annotations']))
+
+
 
 if __name__ == '__main__':
     unittest.main()

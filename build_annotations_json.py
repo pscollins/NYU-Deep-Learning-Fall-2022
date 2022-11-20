@@ -1,24 +1,38 @@
+import argparse
 import json
 import os
 import sys
 
 import load_data
 
-# usage:
-#  python3 build_annotations_json.py data/labeled_data/training data/labeled_data/annotations_training.json
-def main(argv):
-    assert len(argv) == 3, f'Unexpected argument count: {len(argv)}'
-    in_path = argv[1]
-    out_path = argv[2]
+def build_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--in_path', default='')
+    parser.add_argument('--out_path', default='')
+    parser.add_argument('--is_unlabeled', action='store_true',
+                        help='If set, do not populate class/bbox annotations.')
 
-    if os.path.isfile(out_path):
+    return parser
+
+
+# usage:
+#  $ python3 build_annotations_json.py --in_path=data/labeled_data/training --out_path=data/labeled_data/annotations_training.json
+#  or
+#  $ python3 build_annotations_json.py --in_path=data/unlabeled_data  --out_path=data/annotations_unlabeled.json --is_unlabeled
+def main(args):
+    if os.path.isfile(args.out_path):
         raise ValueError(f'Annotations JSON already exists at {out_path}. Delte it first.')
 
-    builder = load_data.CocoAnnotationBuilder(load_data.LabeledDataset(in_path))
+    if args.is_unlabeled:
+        ds = load_data.UnlabeledDatasetLabelShim(args.in_path)
+    else:
+        ds = load_data.LabeledDataset(args.in_path)
+
+    builder = load_data.CocoAnnotationBuilder(ds)
     result = builder.build_coco()
 
-    with open(out_path, 'w') as f:
+    with open(args.out_path, 'w') as f:
         json.dump(result, f)
 
 if __name__ == '__main__':
-    main(sys.argv)
+    main(build_parser().parse_args())

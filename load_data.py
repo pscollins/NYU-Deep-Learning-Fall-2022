@@ -237,8 +237,30 @@ class UnlabeledDataset(torch.utils.data.Dataset):
         augmented = self.augment(img)
         return (augmented, img)
 
+
+# Presents the interface of LabeledDataset to the unlabled dataset, so that we
+# can build an annotations.json for it.
+class UnlabeledDatasetLabelShim(torch.utils.data.Dataset):
+    def __init__(self, root_dir):
+        # TODO(pscollins): shuffle?
+        image_paths = list(sorted(_get_relative_paths_below(root_dir)))
+        self.examples_by_index = [
+            (image_path, None)
+            for image_path in image_paths
+        ]
+
+    def __len__(self):
+        return len(self.examples_by_index)
+
+    def __getitem__(self, idx):
+        path, _ = self.examples_by_index[idx]
+        # Do not suppress the exception if this image is corrupt: the caller is
+        # responsible for handling it.
+        img = torchvision.io.read_image(path)
+        return (img, torch.tensor([]), torch.tensor([]))
+
 class PrefetchingDataset(torch.utils.data.Dataset):
-    def __init__(self, delegate):
+    def __init__(self, root_dir):
         self.entries = [
             img for augmented, img in delegate
         ]
@@ -315,11 +337,17 @@ class CocoAnnotationBuilder:
     # and coco_annotations is a list of dictionaries satisfying the "annotation"
     # COCO annotation format.
     def build_idx(self, idx):
+        try:
+            image, bboxes, classes = self.ds[idx]
+        except Exception as e:
+            print(f'Error loading image at index {idx}, skipping')
+            return (None, [])
+
         image_path, _ = self.ds.examples_by_index[idx]
-        image, bboxes, classes = self.ds[idx]
+
         self.image_id += 1
 
-        if (self.image_id % self.LOG_EVERY_N) == 0:
+        if (self.image_id % self.LOG_EVERY_N) == 0 and (self.image_id > 0):
             print(f'Processing image #{self.image_id}')
 
         c, h, w = image.shape
@@ -344,8 +372,6 @@ class CocoAnnotationBuilder:
         def bbox_to_coco(bbox):
             assert list(bbox.shape) == [4], f'Unexpected bbox shape: {bbox.shape}'
             x0, y0, x1, y1 = tensors_to_floats(bbox)
-            # assert torch.all(x0 <= x1)
-            # assert torch.all(y0 <= y1)
             # x0, y0, w, h
             return [x0, y0, x1 - x0, y1 - y0]
 
@@ -403,7 +429,8 @@ class CocoAnnotationBuilder:
                 'name': '',
                 'url': ''
             }],
-            'images': images,
+            # Filter out `None`s from corrupt images
+            'images': [img for img in images if img is not None],
             'annotations': sum(annotation_lists, []),
             'categories': self._build_categories(),
         }
