@@ -11,6 +11,13 @@ from ubteacher.modeling import *
 from ubteacher.engine import *
 from ubteacher import add_ubteacher_config
 
+
+def build_argument_parser():
+    parser = default_argument_parser()
+    parser.add_argument('--disable-amp', action='store_true',
+                        help='Override YAML setting for AMP, to enable CPU training.')
+    return parser
+
 def custom_setup(args):
     """
     Nonstandard configuration for our environment.
@@ -25,6 +32,7 @@ def custom_setup(args):
         image_root="data/labeled_data/validation/images")
 
 
+
 def setup(args):
     """
     Create configs and perform basic setups.
@@ -36,6 +44,13 @@ def setup(args):
     cfg.merge_from_list(args.opts)
     cfg.freeze()
     default_setup(cfg, args)
+
+    if args.disable_amp:
+        print(f'Disabling AMP. Was: {cfg.SOLVER.AMP.ENABLED}.')
+        cfg.defrost()
+        cfg.SOLVER.AMP.ENABLED = False
+        cfg.freeze()
+
     return cfg
 
 
@@ -74,7 +89,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    args = default_argument_parser().parse_args()
+    args = build_argument_parser().parse_args()
 
     print("Command Line Args:", args)
     launch(

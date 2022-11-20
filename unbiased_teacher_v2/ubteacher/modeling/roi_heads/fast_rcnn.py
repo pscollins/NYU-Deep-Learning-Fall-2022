@@ -1280,8 +1280,11 @@ def nl_loss(
     # Gradient explosion and predict log(2*sigma) instead?
     first_term = torch.square(target - mean) / (2 * sigma_sq)
     second_term = 0.5 * torch.log(sigma_sq)
+    # sum_before_iou = (first_term + second_term).sum(dim=1) + 2 * torch.log(
+    #     2 * torch.Tensor([math.pi]).cuda()
+    # )
     sum_before_iou = (first_term + second_term).sum(dim=1) + 2 * torch.log(
-        2 * torch.Tensor([math.pi]).cuda()
+        2 * torch.Tensor([math.pi]).to(input.device)
     )
     loss_m = sum_before_iou * iou_weight
 
