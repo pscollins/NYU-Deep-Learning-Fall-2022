@@ -118,7 +118,8 @@ def add_ubteacher_config(cfg):
     _C.MODEL.FCOS = CN()
 
     # This is the number of foreground classes.
-    _C.MODEL.FCOS.NUM_CLASSES = 80
+    # _C.MODEL.FCOS.NUM_CLASSES = 80
+    _C.MODEL.FCOS.NUM_CLASSES = 100  # classes for our custom dataset
     _C.MODEL.FCOS.IN_FEATURES = ["p3", "p4", "p5", "p6", "p7"]
     _C.MODEL.FCOS.FPN_STRIDES = [8, 16, 32, 64, 128]
     _C.MODEL.FCOS.PRIOR_PROB = 0.01

@@ -36,7 +36,7 @@ from ubteacher.solver.build import build_lr_scheduler
 
 # Unbiased Teacher Trainer for FCOS
 class UBTeacherTrainer(DefaultTrainer):
-    def __init__(self, cfg):
+    def __init__(self, cfg, args=None):
         """
         Args:
             cfg (CfgNode):
@@ -49,9 +49,13 @@ class UBTeacherTrainer(DefaultTrainer):
         model = self.build_model(cfg)
         optimizer = self.build_optimizer(cfg, model)
 
+        if args is not None and args.num_gpus == 0:
+            # Reuse num_gpus == 0 to mean "train on CPU"
+            model = model.cpu()
+
         # create an teacher model
         model_teacher = self.build_model(cfg)
-        self.model_teacher = model_teacher
+        self.model_teacher = model_teacher.to(model.device)
         self.model_teacher.eval()
 
         data_loader = self.build_train_loader(cfg)
@@ -610,7 +614,7 @@ class UBTeacherTrainer(DefaultTrainer):
 
 # Unbiased Teacher Trainer for Faster RCNN
 class UBRCNNTeacherTrainer(DefaultTrainer):
-    def __init__(self, cfg):
+    def __init__(self, cfg, args=None):
         """
         Args:
             cfg (CfgNode):
@@ -623,6 +627,10 @@ class UBRCNNTeacherTrainer(DefaultTrainer):
         # create an student model
         model = self.build_model(cfg)
         optimizer = self.build_optimizer(cfg, model)
+
+        if args is not None and args.num_gpus == 0:
+            # Reuse num_gpus == 0 to mean "train on CPU"
+            model = model.cpu()
 
         # create an teacher model
         model_teacher = self.build_model(cfg)
@@ -669,10 +677,6 @@ class UBRCNNTeacherTrainer(DefaultTrainer):
         Args:
             resume (bool): whether to do resume or not
         """
-        print('resume_or_load, resume={resume}')
-        if not os.path.isfile(self.cfg.MODEL.WEIGHTS):
-            print(f'Weights checkpoint does not exist: {self.cfg.MODEL.WEIGHTS}. Skipping load.')
-            return
         checkpoint = self.checkpointer.resume_or_load(
             self.cfg.MODEL.WEIGHTS, resume=resume
         )
