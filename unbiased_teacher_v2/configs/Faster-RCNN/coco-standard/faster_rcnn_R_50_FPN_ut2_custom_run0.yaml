@@ -30,8 +30,11 @@ DATALOADER:
   SUP_PERCENT: 1.0
   RANDOM_DATA_SEED: 0
 DATASETS:
-  CROSS_DATASET: False
-  TRAIN: ("nyu_dl_train",)
+  # CROSS_DATASET: False
+  # TRAIN: ("nyu_dl_train",)
+  CROSS_DATASET: True
+  TRAIN_LABEL: ("nyu_dl_train",)
+  TRAIN_UNLABEL: ("nyu_dl_unlabeled",)
   TEST: ("nyu_dl_val",)
 SEMISUPNET:
   Trainer: "ubteacher_rcnn"
