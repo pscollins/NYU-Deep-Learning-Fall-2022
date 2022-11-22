@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 
+import torch
+
+try:
+    # Although we set the device by overriding MODEL.DEVICE, we still need to
+    # import pytorch_xla here to make sure that __init__ runs
+    import torch_xla
+    print('Successfully loaded XLA.')
+except ImportError:
+    print('XLA unavailable!')
+
+
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
 from detectron2.engine import default_argument_parser, default_setup, launch

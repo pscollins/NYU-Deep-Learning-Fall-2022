@@ -80,7 +80,15 @@ class DatasetMapperTwoCropSeparate(DatasetMapper):
         """
         dataset_dict = copy.deepcopy(dataset_dict)  # it will be modified by code below
         image = utils.read_image(dataset_dict["file_name"], format=self.img_format)
-        utils.check_image_size(dataset_dict, image)
+        try:
+            utils.check_image_size(dataset_dict, image)
+        except utils.SizeMismatchError:
+            # data/labeled_data/training/images/3031.JPEG has EXIF data that
+            # causes it to be flipped and fail validation here. As a workaround,
+            # try transposing the H and W of the image and trying again.
+            image = image.transpose(1, 0, 2)
+            #
+            utils.check_image_size(dataset_dict, image)
 
         if "sem_seg_file_name" in dataset_dict:
             sem_seg_gt = utils.read_image(

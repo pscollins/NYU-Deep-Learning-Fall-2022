@@ -5,9 +5,18 @@ import os
 import time
 from collections import OrderedDict
 
+import torch
+
+try:
+    import torch_xla.core.xla_model as xm
+    do_optimizer_step = xm.optimizer_step
+except ImportError:
+    print('XLA is missing!')
+    do_optimizer_step = lambda x: x.step()
+
+
 import detectron2.utils.comm as comm
 import numpy as np
-import torch
 from detectron2.engine import DefaultTrainer, hooks, SimpleTrainer, TrainerBase
 from detectron2.engine.train_loop import AMPTrainer
 from detectron2.evaluation import (
@@ -182,6 +191,7 @@ class UBTeacherTrainer(DefaultTrainer):
     # =====================================================
 
     def run_step_full_semisup(self):
+        print(f'Run iter {self.iter}')
         self._trainer.iter = self.iter
         assert self.model.training, "[UBTeacherTrainer] model was changed to eval mode!"
         start = time.perf_counter()
@@ -429,7 +439,8 @@ class UBTeacherTrainer(DefaultTrainer):
             self._trainer.grad_scaler.update()
         else:
             losses.backward()
-            self.optimizer.step()
+            # self.optimizer.step()
+            do_optimizer_step(self.optimizer)
 
     def _write_metrics(self, metrics_dict):
         metrics_dict = {
@@ -790,6 +801,7 @@ class UBRCNNTeacherTrainer(DefaultTrainer):
     # =====================================================
 
     def run_step_full_semisup(self):
+        print(f'Run iter {self.iter}')
         self._trainer.iter = self.iter
         assert self.model.training, "[UBTeacherTrainer] model was changed to eval mode!"
         start = time.perf_counter()
@@ -915,7 +927,8 @@ class UBRCNNTeacherTrainer(DefaultTrainer):
 
         self.optimizer.zero_grad()
         losses.backward()
-        self.optimizer.step()
+        # self.optimizer.step()
+        do_optimizer_step(self.optimizer)
 
     def _write_metrics(self, metrics_dict):
         metrics_dict = {
