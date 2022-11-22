@@ -87,7 +87,7 @@ class DatasetMapperTwoCropSeparate(DatasetMapper):
             # causes it to be flipped and fail validation here. As a workaround,
             # try transposing the H and W of the image and trying again.
             image = image.transpose(1, 0, 2)
-            #
+            # Try validation again
             utils.check_image_size(dataset_dict, image)
 
         if "sem_seg_file_name" in dataset_dict:

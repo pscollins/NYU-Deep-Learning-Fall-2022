@@ -131,3 +131,6 @@ dmypy.json
 # emacs temp files
 .#*
 *~undo-tree~
+
+# model output
+output/
