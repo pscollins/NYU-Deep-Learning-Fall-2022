@@ -204,11 +204,13 @@ class UBTeacherTrainer(DefaultTrainer):
         if self.iter < self.cfg.SEMISUPNET.BURN_UP_STEP:
             # input both strong and weak supervised data into model
             label_data_q.extend(label_data_k)
+            print('eval burn in model')
             if self.cfg.SOLVER.AMP.ENABLED:
                 with autocast():
                     record_dict = self.model(label_data_q, branch="labeled")
             else:
                 record_dict = self.model(label_data_q, branch="labeled")
+            print('finished burn in model eval')
 
             # weight losses
             loss_dict = {}
@@ -427,6 +429,7 @@ class UBTeacherTrainer(DefaultTrainer):
                     losses = sum(loss_dict.values())
             else:
                 losses = sum(loss_dict.values())
+
 
         metrics_dict = record_dict
         metrics_dict["data_time"] = data_time
@@ -928,6 +931,7 @@ class UBRCNNTeacherTrainer(DefaultTrainer):
         self.optimizer.zero_grad()
         losses.backward()
         # self.optimizer.step()
+        print('going to take optimizer step')
         do_optimizer_step(self.optimizer)
 
     def _write_metrics(self, metrics_dict):

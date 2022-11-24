@@ -73,7 +73,12 @@ class Integral(nn.Module):
                 offsets from the box center in four directions, shape (N, 4).
         """
         x = F.softmax(x.reshape(-1, self.reg_max + 1), dim=1)
-        x = F.linear(x, self.project.type_as(x)).reshape(-1, 4)
+
+        # Work around potential pytorch/xla bug
+        # https://github.com/pytorch/xla/issues/4234
+        x = F.linear(x, torch.unsqueeze(self.project.type_as(x), 0)).reshape(-1, 4)
+        # Original call:
+        # x = F.linear(x, self.project.type_as(x)).reshape(-1, 4)
         return x
 
 
@@ -1234,7 +1239,11 @@ class FCOSOutputs(nn.Module):
             per_centerness = ctrness_pred[i]
             per_centerness = per_centerness[per_box_loc]
             per_cls_conf = cls_confs[i]
+            print(f'per_cls_conf: {per_cls_conf.shape} {per_cls_conf.dtype}')
+            print(f'per_candidate_inds: {per_candidate_inds.shape} {per_candidate_inds.dtype}')
             per_cls_conf = per_cls_conf[per_candidate_inds]
+            print('did compress')
+            # per_cls_conf = torch.gather(per_cls_conf, dim=0, index=per_candidate_inds)
 
             if top_feat is not None:
                 per_top_feat = top_feat[i]
@@ -1243,8 +1252,10 @@ class FCOSOutputs(nn.Module):
             # select top k
             per_pre_nms_top_n = pre_nms_top_n[i]
 
+            print('going to call item()')
             # check whether per_candidate boxes is too many
             if per_candidate_inds.sum().item() > per_pre_nms_top_n.item():
+                print('item(): yes')
                 per_box_cls, top_k_indices = per_box_cls.topk(
                     per_pre_nms_top_n, sorted=False
                 )
@@ -1264,6 +1275,7 @@ class FCOSOutputs(nn.Module):
                 if top_feat is not None:
                     per_top_feat = per_top_feat[top_k_indices]
 
+            print('item(): no')
             detections = torch.stack(
                 [
                     per_locations[:, 0] - per_box_regression[:, 0],

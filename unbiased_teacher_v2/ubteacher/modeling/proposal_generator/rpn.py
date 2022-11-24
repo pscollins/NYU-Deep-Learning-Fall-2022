@@ -10,6 +10,31 @@ from detectron2.modeling.proposal_generator.build import PROPOSAL_GENERATOR_REGI
 from detectron2.structures import Boxes, ImageList, Instances, pairwise_iou
 from detectron2.utils.events import get_event_storage
 from detectron2.utils.memory import retry_if_cuda_oom
+from detectron2.layers import move_device_like, batched_nms
+
+
+def masked_binary_cross_entropy_with_logits(pred_objectness_logits,
+                                           gt_labels,
+                                           gt_confids,
+                                           valid_mask):
+    if gt_labels.device.type == 'xla':
+        default_weights = gt_confids if gt_confids else torch.ones_like(gt_labels)
+        masked_weights = torch.where(valid_mask, default_weights, torch.zeros_like(default_weights))
+        return F.binary_cross_entropy_with_logits(
+                cat(pred_objectness_logits, dim=1),
+                gt_labels.to(torch.float32),
+                weight=masked_weights,
+                reduction="sum",
+            )
+    else:
+        masked_weights = gt_confids[valid_mask] if gt_confids is not None else None
+        return F.binary_cross_entropy_with_logits(
+            cat(pred_objectness_logits, dim=1)[valid_mask],
+            gt_labels[valid_mask].to(torch.float32),
+            weight=masked_gt_confids,
+            reduction="sum",
+        )
+
 
 
 @PROPOSAL_GENERATOR_REGISTRY.register()
@@ -69,11 +94,36 @@ class PseudoLabRPN(RPN):
         else:  # inference
             losses = {}
 
-        proposals = self.predict_proposals(
-            anchors, pred_objectness_logits, pred_anchor_deltas, images.image_sizes
-        )
+        if anchors[0].device.type == 'xla':
+            proposals = self.predict_proposal_static_shape(anchors,
+                                               pred_objectness_logits,
+                                               pred_anchor_deltas,
+                                               images.image_sizes)
+
+        else:
+            proposals = self.predict_proposals(
+                anchors, pred_objectness_logits, pred_anchor_deltas, images.image_sizes
+            )
 
         return proposals, losses
+
+
+    def predict_proposal_static_shape(self, anchors, pred_objectness_logits, pred_anchor_deltas,
+                                      image_sizes):
+        # https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/proposal_generator/rpn.py#L501-L512
+        with torch.no_grad():
+            pred_proposals = self._decode_proposals(anchors, pred_anchor_deltas)
+            return find_top_rpn_proposals_static_shape(
+                pred_proposals,
+                pred_objectness_logits,
+                image_sizes,
+                self.nms_thresh,
+                self.pre_nms_topk[self.training],
+                self.post_nms_topk[self.training],
+                self.min_box_size,
+                self.training,
+            )
+
 
     def label_and_sample_anchors_pseudo(
         self, anchors: List[Boxes], gt_instances: List[Instances]
@@ -184,11 +234,12 @@ class PseudoLabRPN(RPN):
 
         # Log the number of positive/negative anchors per-image that's used in training
         pos_mask = gt_labels == 1
-        num_pos_anchors = pos_mask.sum().item()
-        num_neg_anchors = (gt_labels == 0).sum().item()
-        storage = get_event_storage()
-        storage.put_scalar("rpn/num_pos_anchors", num_pos_anchors / num_images)
-        storage.put_scalar("rpn/num_neg_anchors", num_neg_anchors / num_images)
+        if gt_labels.device.type != 'xla':
+            num_pos_anchors = pos_mask.sum().item()
+            num_neg_anchors = (gt_labels == 0).sum().item()
+            storage = get_event_storage()
+            storage.put_scalar("rpn/num_pos_anchors", num_pos_anchors / num_images)
+            storage.put_scalar("rpn/num_neg_anchors", num_neg_anchors / num_images)
 
         # localization loss is not weighted
         localization_loss = _dense_box_regression_loss(
@@ -204,18 +255,22 @@ class PseudoLabRPN(RPN):
         valid_mask = gt_labels >= 0
         if gt_confids:  # weights
             gt_confids = torch.stack(gt_confids)  # (N, sum(Hi*Wi*Ai))
-            objectness_loss = F.binary_cross_entropy_with_logits(
-                cat(pred_objectness_logits, dim=1)[valid_mask],
-                gt_labels[valid_mask].to(torch.float32),
-                weight=gt_confids[valid_mask],
-                reduction="sum",
-            )
+            objectness_loss = masked_binary_cross_entropy_with_logits(
+                pred_objectness_logits, gt_labels, gt_confids, valid_mask)
+            # objectness_loss = F.binary_cross_entropy_with_logits(
+            #     cat(pred_objectness_logits, dim=1)[valid_mask],
+            #     gt_labels[valid_mask].to(torch.float32),
+            #     weight=gt_confids[valid_mask],
+            #     reduction="sum",
+            # )
         else:  # no weights
-            objectness_loss = F.binary_cross_entropy_with_logits(
-                cat(pred_objectness_logits, dim=1)[valid_mask],
-                gt_labels[valid_mask].to(torch.float32),
-                reduction="sum",
-            )
+            # objectness_loss = F.binary_cross_entropy_with_logits(
+            #     cat(pred_objectness_logits, dim=1)[valid_mask],
+            #     gt_labels[valid_mask].to(torch.float32),
+            #     reduction="sum",
+            # )
+            objectness_loss = masked_binary_cross_entropy_with_logits(
+                pred_objectness_logits, gt_labels, None, valid_mask)
         normalizer = self.batch_size_per_image * num_images
         losses = {
             "loss_rpn_cls": objectness_loss / normalizer,
@@ -223,3 +278,127 @@ class PseudoLabRPN(RPN):
         }
         losses = {k: v * self.loss_weight.get(k, 1.0) for k, v in losses.items()}
         return losses
+
+
+# def find_top_rpn_proposals_static_shape(
+def find_top_rpn_proposals_static_shape(
+    proposals,
+    pred_objectness_logits,
+    image_sizes,
+    nms_thresh,
+    pre_nms_topk,
+    post_nms_topk,
+    min_box_size,
+    training,
+):
+    """
+    For each feature map, select the `pre_nms_topk` highest scoring proposals,
+    apply NMS, clip proposals, and remove small boxes. Return the `post_nms_topk`
+    highest scoring proposals among all the feature maps for each image.
+    Args:
+        proposals (list[Tensor]): A list of L tensors. Tensor i has shape (N, Hi*Wi*A, 4).
+            All proposal predictions on the feature maps.
+        pred_objectness_logits (list[Tensor]): A list of L tensors. Tensor i has shape (N, Hi*Wi*A).
+        image_sizes (list[tuple]): sizes (h, w) for each image
+        nms_thresh (float): IoU threshold to use for NMS
+        pre_nms_topk (int): number of top k scoring proposals to keep before applying NMS.
+            When RPN is run on multiple feature maps (as in FPN) this number is per
+            feature map.
+        post_nms_topk (int): number of top k scoring proposals to keep after applying NMS.
+            When RPN is run on multiple feature maps (as in FPN) this number is total,
+            over all feature maps.
+        min_box_size (float): minimum proposal box side length in pixels (absolute units
+            wrt input images).
+        training (bool): True if proposals are to be used in training, otherwise False.
+            This arg exists only to support a legacy bug; look for the "NB: Legacy bug ..."
+            comment.
+    Returns:
+        list[Instances]: list of N Instances. The i-th Instances
+            stores post_nms_topk object proposals for image i, sorted by their
+            objectness score in descending order.
+    """
+    num_images = len(image_sizes)
+    device = (
+        proposals[0].device
+        if torch.jit.is_scripting()
+        else ("cpu" if torch.jit.is_tracing() else proposals[0].device)
+    )
+    print('find proposals RPN')
+
+    # 1. Select top-k anchor for every level and every image
+    topk_scores = []  # #lvl Tensor, each of shape N x topk
+    topk_proposals = []
+    level_ids = []  # #lvl Tensor, each of shape (topk,)
+    batch_idx = move_device_like(torch.arange(num_images, device=device), proposals[0])
+    for level_id, (proposals_i, logits_i) in enumerate(zip(proposals, pred_objectness_logits)):
+        Hi_Wi_A = logits_i.shape[1]
+        if isinstance(Hi_Wi_A, torch.Tensor):  # it's a tensor in tracing
+            num_proposals_i = torch.clamp(Hi_Wi_A, max=pre_nms_topk)
+        else:
+            num_proposals_i = min(Hi_Wi_A, pre_nms_topk)
+
+        topk_scores_i, topk_idx = logits_i.topk(num_proposals_i, dim=1)
+
+        # each is N x topk
+        topk_proposals_i = proposals_i[batch_idx[:, None], topk_idx]  # N x topk x 4
+
+        topk_proposals.append(topk_proposals_i)
+        topk_scores.append(topk_scores_i)
+        level_ids.append(
+            move_device_like(
+                torch.full((num_proposals_i,), level_id, dtype=torch.int64, device=device),
+                proposals[0],
+            )
+        )
+
+    # 2. Concat all levels together
+    topk_scores = cat(topk_scores, dim=1)
+    topk_proposals = cat(topk_proposals, dim=1)
+    level_ids = cat(level_ids, dim=0)
+
+    # 3. For each image, run a per-level NMS, and choose topk results.
+    results: List[Instances] = []
+    for n, image_size in enumerate(image_sizes):
+        boxes = Boxes(topk_proposals[n])
+        scores_per_img = topk_scores[n]
+        lvl = level_ids
+
+        valid_mask = torch.isfinite(boxes.tensor).all(dim=1) & torch.isfinite(scores_per_img)
+        if not valid_mask.all():
+            if training:
+                raise FloatingPointError(
+                    "Predicted boxes or scores contain Inf/NaN. Training has diverged."
+                )
+            boxes = boxes[valid_mask]
+            scores_per_img = scores_per_img[valid_mask]
+            lvl = lvl[valid_mask]
+        boxes.clip(image_size)
+
+        # filter empty boxes
+        keep = boxes.nonempty(threshold=min_box_size)
+        # boxes = torch.where(
+        #     keep,
+        #     boxes,
+        #     torch.zeros_like(boxes))
+        scores_per_img = torch.where(keep, scores_per_img, torch.zeros_like(scores_per_img))
+        # lvl = torch.where(keep, lvl, 0)
+        # if _is_tracing() or keep.sum().item() != len(boxes):
+        #     boxes, scores_per_img, lvl = boxes[keep], scores_per_img[keep], lvl[keep]
+
+        keep = batched_nms(boxes.tensor, scores_per_img, lvl, nms_thresh)
+        # In Detectron1, there was different behavior during training vs. testing.
+        # (https://github.com/facebookresearch/Detectron/issues/459)
+        # During training, topk is over the proposals from *all* images in the training batch.
+        # During testing, it is over the proposals for each image separately.
+        # As a result, the training behavior becomes batch-dependent,
+        # and the configuration "POST_NMS_TOPK_TRAIN" end up relying on the batch size.
+        # This bug is addressed in Detectron2 to make the behavior independent of batch size.
+        keep = keep[:post_nms_topk]  # keep is already sorted
+
+        res = Instances(image_size)
+        # res.proposal_boxes = boxes[keep]
+        # res.objectness_logits = scores_per_img[keep]
+        res.proposal_boxes = boxes
+        res.objectness_logits = scores_per_img
+        results.append(res)
+    return results
