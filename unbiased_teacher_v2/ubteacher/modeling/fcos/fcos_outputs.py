@@ -18,6 +18,12 @@ logger = logging.getLogger(__name__)
 
 INF = 100000000
 
+def mask_assign(t, mask, scalar):
+    return torch.where(mask, torch.tensor(scalar, device=t.device, dtype=t.dtype), t)
+
+def inf_or(t, mask):
+    return mask_assign(t, mask, INF)
+
 """
 Shape shorthand in this module:
 
@@ -313,14 +319,17 @@ class FCOSOutputs(nn.Module):
     def fcos_losses(self, instances):
 
         losses = {}
-        if instances.keep_locations.sum() > 0:  # some instances are not ignored
+        is_xla = instances.logits_pred.device.type == 'xla'
+
+        if not is_xla and (instances.keep_locations.sum() > 0):  # some instances are not ignored
             instances = instances[instances.keep_locations]
 
-        num_classes = instances.logits_pred.size(1)
-        assert num_classes == self.num_classes
+        if not is_xla:
+            num_classes = instances.logits_pred.size(1)
+            assert num_classes == self.num_classes
 
         labels = instances.labels.flatten()
-        pos_inds = torch.nonzero(labels != num_classes).squeeze(1)
+        pos_inds = torch.nonzero(labels != self.num_classes).squeeze(1)
         num_pos_local = pos_inds.numel()
         num_gpus = get_world_size()
         total_num_pos = reduce_sum(pos_inds.new_tensor([num_pos_local])).item()
@@ -869,12 +878,15 @@ class FCOSOutputs(nn.Module):
                 max_reg_targets_per_im <= size_ranges[:, [1]]
             )
 
+
             # compute the area for each gt box
             locations_to_gt_area = area[None].repeat(len(locations), 1)
             # set points (outside box/small region) as background
-            locations_to_gt_area[is_in_boxes == 0] = INF
+            # locations_to_gt_area[is_in_boxes == 0] = INF
             # set points with too large displacement or too small displacement as background
-            locations_to_gt_area[is_cared_in_the_level == 0] = INF
+            # locations_to_gt_area[is_cared_in_the_level == 0] = INF
+            locations_to_gt_area = inf_or(locations_to_gt_area,
+                                          (is_in_boxes == 0) | (is_cared_in_the_level == 0))
 
             # if there are still more than one objects for a location,
             # we choose the one with minimal area
@@ -892,14 +904,18 @@ class FCOSOutputs(nn.Module):
             num_targets += len(targets_per_im)
 
             labels_per_im = labels_per_im[locations_to_gt_inds]
-            labels_per_im[locations_to_min_area == INF] = self.num_classes
+            # labels_per_im[locations_to_min_area == INF] = self.num_classes
+            inf_locations_mask = locations_to_min_area == INF
+            labels_per_im = mask_assign(labels_per_im, inf_locations_mask, self.num_classes)
 
             # TODO: background weight is 1.0 for now; we could try to use average score as background weights
             box_weights_per_im = box_weights_per_im[locations_to_gt_inds]
-            box_weights_per_im[locations_to_min_area == INF] = 1.0
+            # box_weights_per_im[locations_to_min_area == INF] = 1.0
+            box_weights_per_im = mask_assign(box_weights_per_im, inf_locations_mask, 1.0)
 
             boundary_var_per_im = boundary_var_per_im[locations_to_gt_inds]
-            boundary_var_per_im[locations_to_min_area == INF] = 99999.0
+            # boundary_var_per_im[locations_to_min_area == INF] = 99999.0
+            boundary_var_per_im = mask_assign(boundary_var_per_im, inf_locations_mask.unsqueeze(-1), 99999.0)
 
             labels.append(labels_per_im)
             box_weights.append(box_weights_per_im)
