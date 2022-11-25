@@ -3,13 +3,13 @@
 
 import torch
 
-try:
-    # Although we set the device by overriding MODEL.DEVICE, we still need to
-    # import pytorch_xla here to make sure that __init__ runs
-    import torch_xla
-    print('Successfully loaded XLA.')
-except ImportError:
-    print('XLA unavailable!')
+# try:
+#     # Although we set the device by overriding MODEL.DEVICE, we still need to
+#     # import pytorch_xla here to make sure that __init__ runs
+#     import torch_xla
+#     print('Successfully loaded XLA.')
+# except ImportError:
+#     print('XLA unavailable!')
 
 
 from detectron2.checkpoint import DetectionCheckpointer

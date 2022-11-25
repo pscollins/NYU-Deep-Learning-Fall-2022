@@ -100,7 +100,7 @@ class NLLoss(nn.Module):
         first_term = torch.square(target - mean) / (2 * sigma_sq)
         second_term = 0.5 * torch.log(sigma_sq)
         sum_before_iou = (first_term + second_term).sum(dim=1) + 2 * torch.log(
-            2 * torch.Tensor([math.pi], device=device)
+            2 * torch.tensor([math.pi], device=device)
         )
         loss_mean = (sum_before_iou * iou_weight).mean()
         return loss_mean

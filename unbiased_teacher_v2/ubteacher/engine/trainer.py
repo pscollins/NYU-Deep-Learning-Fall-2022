@@ -7,12 +7,12 @@ from collections import OrderedDict
 
 import torch
 
-try:
-    import torch_xla.core.xla_model as xm
-    do_optimizer_step = xm.optimizer_step
-except ImportError:
-    print('XLA is missing!')
-    do_optimizer_step = lambda x: x.step()
+# try:
+#     import torch_xla.core.xla_model as xm
+#     do_optimizer_step = xm.optimizer_step
+# except ImportError:
+#     print('XLA is missing!')
+do_optimizer_step = lambda x: x.step()
 
 
 import detectron2.utils.comm as comm
