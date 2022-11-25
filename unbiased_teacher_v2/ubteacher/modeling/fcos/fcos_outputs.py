@@ -330,6 +330,8 @@ class FCOSOutputs(nn.Module):
 
         labels = instances.labels.flatten()
         pos_inds = torch.nonzero(labels != self.num_classes).squeeze(1)
+        print(f'{labels.shape=}')
+        print(f'{pos_inds.shape=}')
         num_pos_local = pos_inds.numel()
         num_gpus = get_world_size()
         total_num_pos = reduce_sum(pos_inds.new_tensor([num_pos_local])).item()

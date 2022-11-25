@@ -10,6 +10,7 @@ DEST_SHAPE = (100000,)
 THRESHOLD = .5
 
 ITERS = 1000
+# ITERS = 5
 
 def test_store_getitem(device):
     dest = torch.rand(DEST_SHAPE, device=device)
