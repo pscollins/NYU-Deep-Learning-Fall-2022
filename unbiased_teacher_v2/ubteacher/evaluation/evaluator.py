@@ -8,8 +8,19 @@ import torch
 from detectron2.evaluation.evaluator import DatasetEvaluators
 from detectron2.utils.comm import get_world_size
 from detectron2.utils.logger import log_every_n_seconds
+from detectron2.data import detection_utils
 from torch import nn
 
+
+def filter_bad_sizes(iterable):
+    while True:
+        try:
+            yield next(iterable)
+        except detection_utils.SizeMismatchError:
+            # ignore flipped images
+            pass
+        except StopIteration:
+            return
 
 def inference_on_dataset(model, data_loader, evaluator, cfg):
     """
@@ -48,7 +59,8 @@ def inference_on_dataset(model, data_loader, evaluator, cfg):
             stack.enter_context(inference_context(model))
         stack.enter_context(torch.no_grad())
 
-        for idx, inputs in enumerate(data_loader):
+        # for idx, inputs in enumerate(data_loader):
+        for idx, inputs in filter_bad_sizes(enumerate(data_loader)):
             if idx == num_warmup:
                 start_time = time.perf_counter()
                 total_compute_time = 0

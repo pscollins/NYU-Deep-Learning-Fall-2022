@@ -191,7 +191,7 @@ class UBTeacherTrainer(DefaultTrainer):
     # =====================================================
 
     def run_step_full_semisup(self):
-        print(f'Run iter {self.iter}')
+        # print(f'Run iter {self.iter}')
         self._trainer.iter = self.iter
         assert self.model.training, "[UBTeacherTrainer] model was changed to eval mode!"
         start = time.perf_counter()
@@ -801,7 +801,7 @@ class UBRCNNTeacherTrainer(DefaultTrainer):
     # =====================================================
 
     def run_step_full_semisup(self):
-        print(f'Run iter {self.iter}')
+        # print(f'Run iter {self.iter}')
         self._trainer.iter = self.iter
         assert self.model.training, "[UBTeacherTrainer] model was changed to eval mode!"
         start = time.perf_counter()
