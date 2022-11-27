@@ -34,6 +34,7 @@ DATASETS:
   # CROSS_DATASET: False
   # TRAIN: ("nyu_dl_train",)
   CROSS_DATASET: True
+  TRAIN:
   TRAIN_LABEL: ("nyu_dl_train",)
   TRAIN_UNLABEL: ("nyu_dl_unlabeled",)
   TEST: ("nyu_dl_val",)
