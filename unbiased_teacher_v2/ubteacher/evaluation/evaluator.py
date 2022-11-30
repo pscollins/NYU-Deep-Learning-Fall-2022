@@ -66,7 +66,10 @@ def inference_on_dataset(model, data_loader, evaluator, cfg):
                 total_compute_time = 0
 
             start_compute_time = time.perf_counter()
-            outputs = model(inputs, nms_method=cfg.MODEL.FCOS.NMS_CRITERIA_TEST)
+            if cfg is not None:
+                outputs = model(inputs, nms_method=cfg.MODEL.FCOS.NMS_CRITERIA_TEST)
+            else:
+                outputs = model(inputs)
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             total_compute_time += time.perf_counter() - start_compute_time
