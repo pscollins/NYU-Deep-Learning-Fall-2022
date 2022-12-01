@@ -157,8 +157,8 @@ class FCOSOutputs(nn.Module):
         # bin offset classification
         self.reg_discrete = cfg.MODEL.FCOS.REG_DISCRETE
         self.reg_max = cfg.MODEL.FCOS.REG_MAX
-        # self.fpn_stride = torch.tensor(cfg.MODEL.FCOS.FPN_STRIDES).cuda().float()
-        self.fpn_stride = torch.tensor(cfg.MODEL.FCOS.FPN_STRIDES).float()
+        self.fpn_stride = torch.tensor(cfg.MODEL.FCOS.FPN_STRIDES).cuda().float()
+        # self.fpn_stride = torch.tensor(cfg.MODEL.FCOS.FPN_STRIDES).float()
         self.dfl_loss_weight = cfg.MODEL.FCOS.DFL_WEIGHT
         self.unify_ctrcls = cfg.MODEL.FCOS.UNIFY_CTRCLS
 
