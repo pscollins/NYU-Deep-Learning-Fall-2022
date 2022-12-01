@@ -87,6 +87,7 @@ class UBTeacherTrainer(DefaultTrainer):
 
         # create an student model
         model = self.build_model(cfg)
+        model.name = 'student_model'
         optimizer = self.build_optimizer(cfg, model)
 
         if args is not None and args.use_cpu:
@@ -94,6 +95,7 @@ class UBTeacherTrainer(DefaultTrainer):
 
         # create an teacher model
         model_teacher = self.build_model(cfg)
+        model_teacher.name = 'teacher_model'
         self.model_teacher = model_teacher.to(model.device)
         self.model_teacher.eval()
 
@@ -682,6 +684,8 @@ class UBTeacherTrainer(DefaultTrainer):
                     results[dataset_name] = {}
                     continue
             results_i = inference_on_dataset(model, data_loader, evaluator, cfg)
+
+            print('Got results: ', results_i)
             # results_i = inference_on_dataset(model, data_loader, evaluator)
 
             results[dataset_name] = results_i
@@ -1060,6 +1064,11 @@ class UBRCNNTeacherTrainer(DefaultTrainer):
         metrics_dict = record_dict
         metrics_dict["data_time"] = data_time
         self._write_metrics(metrics_dict)
+        # try:
+        #     # HACK: REVERT
+        #     self._write_metrics(metrics_dict)
+        # except Exception as e:
+        #     print('Failed to write metrics: ', e)
 
         self.optimizer.zero_grad()
         losses.backward()

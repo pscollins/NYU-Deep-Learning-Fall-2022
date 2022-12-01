@@ -18,6 +18,8 @@ from detectron2.config import get_cfg
 from detectron2.engine import default_argument_parser, default_setup, launch
 from detectron2.data import datasets as detectron2_datasets
 from detectron2.layers.batch_norm import FrozenBatchNorm2d
+from detectron2.utils.events import EventStorage
+
 
 # hacky way to register
 from ubteacher.modeling import *
@@ -37,6 +39,8 @@ def build_argument_parser():
                         help='Replace batch norm with sync batch norm.')
     parser.add_argument('--ddp-teacher', action='store_true',
                         help='Wrap teacher in DDP')
+    parser.add_argument('--num-steps', type=int, default=1,
+                        help='how many steps to take')
 
     return parser
 
@@ -57,8 +61,20 @@ def custom_setup(args):
         json_file="data/annotations/annotations_validation_small.json",
         image_root="data/labeled_data/validation/images")
     detectron2_datasets.register_coco_instances(
+        name="nyu_dl_val_100", metadata={},
+        json_file="data/annotations/annotations_validation_100.json",
+        image_root="data/labeled_data/validation/images")
+    detectron2_datasets.register_coco_instances(
+        name="nyu_dl_val_1000", metadata={},
+        json_file="data/annotations/annotations_validation_1000.json",
+        image_root="data/labeled_data/validation/images")
+    detectron2_datasets.register_coco_instances(
         name="nyu_dl_unlabeled", metadata={},
         json_file="data/annotations/annotations_unlabeled.json",
+        image_root="data/unlabeled_data/")
+    detectron2_datasets.register_coco_instances(
+        name="nyu_dl_unlabeled_small", metadata={},
+        json_file="data/annotations/annotations_unlabeled_small.json",
         image_root="data/unlabeled_data/")
 
 
@@ -139,10 +155,30 @@ def main(args):
 
     trainer = Trainer(cfg, args)
     trainer.resume_or_load(resume=args.resume)
-    trainer._update_teacher_model(keep_rate=0)
-    trainer.check_weights_close()
-    trainer.test(trainer.cfg, trainer.model)
-    trainer.test(trainer.cfg, trainer.model_teacher)
+    trainer.model.name = 'student_model'
+    trainer.model.name = 'teacher_model'
+    # trainer._update_teacher_model(keep_rate=0)
+    # trainer.check_weights_close()
+
+    # print('EVAL 1')
+    # with EventStorage(0):
+    #     trainer.test(trainer.cfg, trainer.model)
+    #     trainer.test(trainer.cfg, trainer.model_teacher)
+
+    print('DONE EVAL 1')
+    trainer.train_loop(trainer.start_iter, trainer.start_iter + args.num_steps)
+    # trainer.max_iter = trainer.start_iter + 1
+    # try:
+    #     trainer.train_loop(trainer.start_iter, trainer.start_iter + args.num_steps)
+    # except Exception as e:
+    #     print(f'Ignoring exception: {e}')
+    # trainer.run_step_full_semisup()
+    print('DONE STEP')
+
+    # print('EVAL 2')
+    # trainer.test(trainer.cfg, trainer.model)
+    # trainer.test(trainer.cfg, trainer.model_teacher)
+
 
     # maybe_freeze_bn(trainer.ensem_ts_model, args)
 
@@ -151,6 +187,8 @@ def main(args):
 
 if __name__ == "__main__":
     args = build_argument_parser().parse_args()
+
+    logging.basicConfig(level=logging.DEBUG)
 
     print("Command Line Args:", args)
     launch(

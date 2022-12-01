@@ -1,4 +1,5 @@
 import logging
+import copy
 
 import numpy as np
 import torch
@@ -12,6 +13,9 @@ from detectron2.utils.events import get_event_storage
 from detectron2.utils.logger import log_first_n
 from torch import nn
 
+
+def on_cpu(element):
+    return copy.deepcopy(element).to('cpu')
 
 def detector_postprocess(results, output_height, output_width, mask_threshold=0.5):
     """
@@ -160,6 +164,7 @@ class OneStageDetector(PseudoProposalNetwork):
         ignore_near=False,
         branch="labeled",
     ):
+        name = getattr(self, 'name', 'name_unknown')
         # training
         if self.training:
             images = [x["image"].to(self.device) for x in batched_inputs]
@@ -202,6 +207,12 @@ class OneStageDetector(PseudoProposalNetwork):
                     ignore_near=ignore_near,
                     branch=branch,
                 )
+                print('VISUALIZE TRAINING1')
+                try:
+                    self.visualize_training(batched_inputs, proposals['proposals'], f'{name}.training.raw.' + branch)
+                except Exception as e:
+                    print('FAILED TO VIS1: ', e)
+                # self.visualize_training(batched_inputs, raw_pred, 'training.raw.raw_props' + branch)
             else:
                 proposals, proposal_losses = self.proposal_generator(
                     images,
@@ -211,6 +222,11 @@ class OneStageDetector(PseudoProposalNetwork):
                     ignore_near=ignore_near,
                     branch=branch,
                 )
+                print('VISUALIZE TRAINING2')
+                try:
+                    self.visualize_training(batched_inputs, proposals['proposals'], f'{name}.training.' + branch)
+                except Exception as e:
+                    print('FAILED TO VIS2: ', e)
 
             if self.training:
                 if output_raw:
@@ -220,14 +236,23 @@ class OneStageDetector(PseudoProposalNetwork):
 
         # inference
         if output_raw:
+            print(f'call for {name}: raw inference, branch: {branch}')
             proposal, raw_pred = super().forward(
                 batched_inputs,
                 output_raw=output_raw,
                 nms_method=nms_method,
                 branch=branch,
             )
+            print(f'{name} raw inference input keys: {batched_inputs[0].keys()}')
+            print(f'{name} raw inference proposal keys: {proposal[0].get_fields().keys()}')
+            print('VISUALIZE TRAINING3')
+            try:
+                self.visualize_training(batched_inputs, proposal, f'{name}.raw.inference.' + branch)
+            except Exception as e:
+                print('FAILED TO VIS3: ', e)
             return proposal, raw_pred
         else:
+            print(f'call for {name}: processed inference')
             processed_results = super().forward(
                 batched_inputs,
                 output_raw=output_raw,
@@ -239,6 +264,7 @@ class OneStageDetector(PseudoProposalNetwork):
             ]
             return processed_results
 
+    @torch.no_grad()
     def visualize_training(self, batched_inputs, proposals, branch):
         """
         A function used to visualize images and proposals. It shows ground truth
@@ -256,28 +282,15 @@ class OneStageDetector(PseudoProposalNetwork):
         storage = get_event_storage()
         max_vis_prop = 20
 
+
+        # print('got input batch: ', batched_inputs)
+        # print('got proposals: ', proposals)
+        print('got branch: ', branch)
         for input, prop in zip(batched_inputs, proposals):
-            if branch == "labeled":
-                img = input["image"]
-                img = convert_image_to_rgb(img.permute(1, 2, 0), "BGR")
-                v_gt = Visualizer(img, None)
-                v_gt = v_gt.overlay_instances(
-                    boxes=input["instances"].gt_boxes.to("cpu")
-                )
-                anno_img = v_gt.get_image()
-                box_size = min(len(prop.pred_boxes), max_vis_prop)
-                v_pred = Visualizer(img, None)
-                v_pred = v_pred.overlay_instances(
-                    boxes=prop.pred_boxes[0:box_size].tensor.cpu().numpy()
-                )
-                prop_img = v_pred.get_image()
-                vis_img = np.concatenate((anno_img, prop_img), axis=1)
-                vis_img = vis_img.transpose(2, 0, 1)
-                vis_name = (
-                    branch
-                    + " | Left: GT bounding boxes;      Right: Predicted proposals"
-                )
-            elif branch == "unlabeled":
+            print('input keys: ', input.keys())
+            print('prop fields: ', prop.get_fields().keys())
+            # if branch == "labeled":
+            if 'unlabeled' in branch:
                 img_list = []
                 img = input["image"]
                 img = convert_image_to_rgb(img.permute(1, 2, 0), "BGR")
@@ -300,11 +313,12 @@ class OneStageDetector(PseudoProposalNetwork):
                     anno_reg_img = v_gt2.get_image()
                     img_list.append(anno_reg_img)
 
-                box_size = min(len(prop.pred_boxes), max_vis_prop)
+                # box_size = min(len(prop.pred_boxes), max_vis_prop)
                 v_pred = Visualizer(img, None)
-                v_pred = v_pred.overlay_instances(
-                    boxes=prop.pred_boxes[0:box_size].tensor.cpu().numpy()
-                )
+                # v_pred = v_pred.overlay_instances(
+                #     boxes=prop.pred_boxes[0:box_size].tensor.cpu().numpy()
+                # )
+                v_pred = v_pred.draw_instance_predictions(on_cpu(prop))
                 prop_img = v_pred.get_image()
                 img_list.append(prop_img)
 
@@ -315,7 +329,30 @@ class OneStageDetector(PseudoProposalNetwork):
                     branch
                     + " | Left: Pseudo-Cls; Center: Pseudo-Reg; Right: Predicted proposals"
                 )
+            elif 'labeled' in branch or 'teacher_weak' in branch:
+                img = input["image"]
+                img = convert_image_to_rgb(img.permute(1, 2, 0), "BGR")
+                v_gt = Visualizer(img, None)
+                v_gt = v_gt.overlay_instances(
+                    boxes=input["instances"].gt_boxes.to("cpu")
+                )
+                anno_img = v_gt.get_image()
+                # box_size = min(len(prop.pred_boxes), max_vis_prop)
+                v_pred = Visualizer(img, None)
+                # v_pred = v_pred.overlay_instances(
+                #     boxes=prop.pred_boxes[0:box_size].tensor.cpu().numpy()
+                # )
+                v_pred = v_pred.draw_instance_predictions(on_cpu(prop))
+                prop_img = v_pred.get_image()
+                vis_img = np.concatenate((anno_img, prop_img), axis=1)
+                vis_img = vis_img.transpose(2, 0, 1)
+                vis_name = (
+                    branch
+                    + " | Left: GT bounding boxes;      Right: Predicted proposals"
+                )
             else:
+                print('skip uknown branch')
                 break
+            print('STORE IMAGE')
             storage.put_image(vis_name, vis_img)
             break  # only visualize one image in a batch

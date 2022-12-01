@@ -3,7 +3,7 @@ import sys
 
 import json
 
-KEEP_COUNT = 10
+KEEP_COUNT = 1000
 
 def main(argv):
     _, infile, outfile = argv
