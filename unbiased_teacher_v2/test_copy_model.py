@@ -54,7 +54,7 @@ def custom_setup(args):
         image_root="data/labeled_data/validation/images")
     detectron2_datasets.register_coco_instances(
         name="nyu_dl_val_small", metadata={},
-        json_file="data/annotations/annotations_validation.json",
+        json_file="data/annotations/annotations_validation_small.json",
         image_root="data/labeled_data/validation/images")
     detectron2_datasets.register_coco_instances(
         name="nyu_dl_unlabeled", metadata={},
