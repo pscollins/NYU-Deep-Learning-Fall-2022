@@ -9,7 +9,7 @@ def main(argv):
     _, infile, outfile = argv
 
     if os.path.isfile(outfile):
-        raise ValueError(f'Annotations JSON already exists at {out_path}. Delte it first.')
+        raise ValueError(f'Annotations JSON already exists at {outfile}. Delte it first.')
 
     with open(infile, 'r') as f:
         all_annotations = json.loads(f.read())
@@ -24,4 +24,7 @@ def main(argv):
     all_annotations['annotations'] = keep_anns
 
     with open(outfile, 'w') as f:
-        f.write(json.dumps(all_annotaions))
+        f.write(json.dumps(all_annotations))
+
+if __name__ == '__main__':
+    main(sys.argv)
