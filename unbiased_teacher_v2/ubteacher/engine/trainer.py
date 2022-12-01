@@ -547,7 +547,6 @@ class UBTeacherTrainer(DefaultTrainer):
                 new_teacher_dict[key] = (
                     student_model_dict[key] * (1 - keep_rate) + value * keep_rate
                 )
-                # print(f'key: {key}, Old teacher value: {value}. Old student value: {student_model_dict[key]}. New value: {new_teacher_dict[key]}.')
             elif self.ddp_teacher and ('module.' + key) in student_model_dict:
                 new_teacher_dict[key] = (
                     student_model_dict['module.' + key] * (1 - keep_rate) + value * keep_rate
@@ -561,6 +560,23 @@ class UBTeacherTrainer(DefaultTrainer):
         # print(f'Unexpected keys: {unexpected_keys}')
         assert not missing_keys
         assert not unexpected_keys
+
+    @torch.no_grad()
+    def check_weights_close(self):
+        if comm.get_world_size() > 1:
+            student_model_dict = {
+                key[7:]: value for key, value in self.model.state_dict().items()
+            }
+        else:
+            student_model_dict = self.model.state_dict()
+
+        teacher_keys = set(self.model_teacher.state_dict().keys())
+        student_keys = set(student_model_dict.keys())
+
+        assert teacher_keys == student_keys
+
+        for key, teacher_value in self.model_teacher.state_dict().items():
+            torch.testing.assert_close(teacher_value, student_model_dict[key])
 
     @torch.no_grad()
     def _copy_main_model(self):
@@ -1105,6 +1121,23 @@ class UBRCNNTeacherTrainer(DefaultTrainer):
                 raise Exception("{} is not found in student model".format(key))
 
         self.model_teacher.load_state_dict(new_teacher_dict)
+
+    # @torch.no_grad()
+    # def check_weights_close(self):
+    #     if comm.get_world_size() > 1:
+    #         student_model_dict = {
+    #             key[7:]: value for key, value in self.model.state_dict().items()
+    #         }
+    #     else:
+    #         student_model_dict = self.model.state_dict()
+
+    #     teacher_keys = set(self.model_teacher.state_dict().keys())
+    #     student_keys = set(student_model_dict.keys())
+
+    #     assert teacher_keys == student_keys
+
+    #     for key, teacher_value in self.model_teacher.state_dict().items():
+    #         torch.testing.assert_close(teacher_value, student_model_dict[key])
 
     @classmethod
     def build_test_loader(cls, cfg, dataset_name):
