@@ -33,6 +33,7 @@ from torch.cuda.amp import autocast
 from torch.nn.parallel import DistributedDataParallel
 from ubteacher.checkpoint.detection_checkpoint import DetectionTSCheckpointer
 
+
 from ubteacher.data.build import (
     build_detection_semisup_train_loader_two_crops,
     build_detection_test_loader,
@@ -42,6 +43,36 @@ from ubteacher.evaluation.evaluator import inference_on_dataset
 from ubteacher.modeling.meta_arch.ts_ensemble import EnsembleTSModel
 from ubteacher.modeling.pseudo_generator import PseudoGenerator
 from ubteacher.solver.build import build_lr_scheduler
+
+from detectron2.layers.batch_norm import FrozenBatchNorm2d
+
+# def do_freeze(module):
+#     bn_module = torch.nn.modules.batchnorm
+#     bn_module = (bn_module.BatchNorm2d, bn_module.SyncBatchNorm)
+#     res = module
+#     if isinstance(module, bn_module):
+#         for param in module.parameters():
+#             param.requires_grad = False
+#     else:
+#         for child in module.children():
+#             do_freeze(child)
+
+
+def maybe_freeze_bn(model, args):
+    logger = logging.getLogger(__name__)
+    print(f"Going to freeze batch norm? {args.freeze_bn}")
+    logger.info(f"Going to freeze batch norm? {args.freeze_bn}")
+    if args.freeze_bn:
+        # do_freeze(model)
+        # https://detectron2.readthedocs.io/en/latest/modules/layers.html#detectron2.layers.FrozenBatchNorm2d.convert_frozen_batchnorm
+        FrozenBatchNorm2d.convert_frozen_batchnorm(model)
+        logger.info("Froze bathchnorm: ", model)
+        print("Froze bathchnorm: ", model)
+
+
+# def maybe_ddp(model, args):
+#     if args.ddp_teacher and comm.get_world_size() > 1:
+#         return
 
 # Unbiased Teacher Trainer for FCOS
 class UBTeacherTrainer(DefaultTrainer):
@@ -68,6 +99,20 @@ class UBTeacherTrainer(DefaultTrainer):
 
         data_loader = self.build_train_loader(cfg)
 
+        self.ddp_teacher = False
+
+        if args:
+            maybe_freeze_bn(model, args)
+            maybe_freeze_bn(model_teacher, args)
+
+            # maybe_ddp(model_teacher, args)
+            if comm.get_world_size() > 1 and args.ddp_teacher:
+                model_teacher = DistributedDataParallel(
+                    model, device_ids=[comm.get_local_rank()], broadcast_buffers=False
+                )
+                self.ddp_teacher = True
+
+
         # For training, wrap with DDP. But don't need this for inference.
         if comm.get_world_size() > 1:
             model = DistributedDataParallel(
@@ -81,10 +126,10 @@ class UBTeacherTrainer(DefaultTrainer):
         self.scheduler = self.build_lr_scheduler(cfg, optimizer)
 
         # Ensemble teacher and student model is for model saving and loading
-        ensem_ts_model = EnsembleTSModel(model_teacher, model)
+        self.ensem_ts_model = EnsembleTSModel(model_teacher, model)
 
         self.checkpointer = DetectionTSCheckpointer(
-            ensem_ts_model,
+            self.ensem_ts_model,
             cfg.OUTPUT_DIR,
             optimizer=optimizer,
             scheduler=self.scheduler,
@@ -118,6 +163,7 @@ class UBTeacherTrainer(DefaultTrainer):
             self.start_iter = checkpoint.get("iteration", -1) + 1
             # The checkpoint stores the training iteration that just finished, thus we start
             # at the next iteration (or iter zero if there's no checkpoint).
+
 
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
@@ -224,6 +270,9 @@ class UBTeacherTrainer(DefaultTrainer):
 
         else:
             if self.iter == self.cfg.SEMISUPNET.BURN_UP_STEP:
+                logger = logging.getLogger(__name__)
+                print("Special transitioinal step!")
+                logger.info("Special transitioinal step!")
                 self._update_teacher_model(keep_rate=0.00)
                 ema_keep_rate = self.cfg.SEMISUPNET.EMA_KEEP_RATE
 
@@ -432,6 +481,8 @@ class UBTeacherTrainer(DefaultTrainer):
         metrics_dict["data_time"] = data_time
         self._write_metrics(metrics_dict)
 
+
+
         self.optimizer.zero_grad()
         if self.cfg.SOLVER.AMP.ENABLED:
             self._trainer.grad_scaler.scale(losses).backward()
@@ -481,9 +532,11 @@ class UBTeacherTrainer(DefaultTrainer):
 
     @torch.no_grad()
     def _update_teacher_model(self, keep_rate=0.996):
+        trim_length = 0 if self.ddp_teacher else 7
         if comm.get_world_size() > 1:
             student_model_dict = {
-                key[7:]: value for key, value in self.model.state_dict().items()
+                # key[7:]: value for key, value in self.model.state_dict().items()
+                key[trim_length:]: value for key, value in self.model.state_dict().items()
             }
         else:
             student_model_dict = self.model.state_dict()
@@ -494,10 +547,20 @@ class UBTeacherTrainer(DefaultTrainer):
                 new_teacher_dict[key] = (
                     student_model_dict[key] * (1 - keep_rate) + value * keep_rate
                 )
+                # print(f'key: {key}, Old teacher value: {value}. Old student value: {student_model_dict[key]}. New value: {new_teacher_dict[key]}.')
+            elif self.ddp_teacher and ('module.' + key) in student_model_dict:
+                new_teacher_dict[key] = (
+                    student_model_dict['module.' + key] * (1 - keep_rate) + value * keep_rate
+                )
             else:
+                print(f'student keys: {student_model_dict.keys()}')
                 raise Exception("{} is not found in student model".format(key))
 
-        self.model_teacher.load_state_dict(new_teacher_dict)
+        missing_keys, unexpected_keys = self.model_teacher.load_state_dict(new_teacher_dict)
+        # print(f'Missing keys: {missing_keys}')
+        # print(f'Unexpected keys: {unexpected_keys}')
+        assert not missing_keys
+        assert not unexpected_keys
 
     @torch.no_grad()
     def _copy_main_model(self):

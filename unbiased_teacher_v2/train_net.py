@@ -2,6 +2,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 
 import torch
+import logging
 
 # try:
 #     # Although we set the device by overriding MODEL.DEVICE, we still need to
@@ -16,12 +17,15 @@ from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
 from detectron2.engine import default_argument_parser, default_setup, launch
 from detectron2.data import datasets as detectron2_datasets
+from detectron2.layers.batch_norm import FrozenBatchNorm2d
 
 # hacky way to register
 from ubteacher.modeling import *
 from ubteacher.engine import *
 from ubteacher import add_ubteacher_config
 
+# from detectron2.utils.logger import setup_logger
+# setup_logger()
 
 def build_argument_parser():
     parser = default_argument_parser()
@@ -29,6 +33,11 @@ def build_argument_parser():
                         help='Override YAML setting for AMP, to enable CPU training.')
     parser.add_argument('--use-cpu', action='store_true',
                         help='Train on CPU rather than GPU.')
+    parser.add_argument('--freeze-bn', action='store_true',
+                        help='Replace batch norm with sync batch norm.')
+    parser.add_argument('--ddp-teacher', action='store_true',
+                        help='Wrap teacher in DDP')
+
     return parser
 
 def custom_setup(args):
@@ -70,6 +79,31 @@ def setup(args):
 
     return cfg
 
+def do_freeze(module):
+    bn_module = torch.nn.modules.batchnorm
+    bn_module = (bn_module.BatchNorm2d, bn_module.SyncBatchNorm)
+    res = module
+    if isinstance(module, bn_module):
+        for param in module.parameters():
+            param.requires_grad = False
+    else:
+        for child in module.children():
+            do_freeze(child)
+
+
+
+def maybe_freeze_bn(model, args):
+    logger = logging.getLogger(__name__)
+    print(f"Going to freeze batch norm? {args.freeze_bn}")
+    logger.info(f"Going to freeze batch norm? {args.freeze_bn}")
+    if args.freeze_bn:
+        do_freeze(model)
+
+
+    #     # https://detectron2.readthedocs.io/en/latest/modules/layers.html#detectron2.layers.FrozenBatchNorm2d.convert_frozen_batchnorm
+    #     FrozenBatchNorm2d.convert_frozen_batchnorm(model)
+    #     logger.info("Froze bathchnorm: ", model)
+    #     print("Froze bathchnorm: ", model)
 
 def main(args):
     cfg = setup(args)
@@ -101,6 +135,7 @@ def main(args):
 
     trainer = Trainer(cfg, args)
     trainer.resume_or_load(resume=args.resume)
+    # maybe_freeze_bn(trainer.ensem_ts_model, args)
 
     return trainer.train()
 
