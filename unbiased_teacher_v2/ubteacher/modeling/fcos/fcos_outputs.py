@@ -158,7 +158,6 @@ class FCOSOutputs(nn.Module):
         self.reg_discrete = cfg.MODEL.FCOS.REG_DISCRETE
         self.reg_max = cfg.MODEL.FCOS.REG_MAX
         self.fpn_stride = torch.tensor(cfg.MODEL.FCOS.FPN_STRIDES).cuda().float()
-        # self.fpn_stride = torch.tensor(cfg.MODEL.FCOS.FPN_STRIDES).float()
         self.dfl_loss_weight = cfg.MODEL.FCOS.DFL_WEIGHT
         self.unify_ctrcls = cfg.MODEL.FCOS.UNIFY_CTRCLS
 
@@ -320,7 +319,6 @@ class FCOSOutputs(nn.Module):
         num_gpus = get_world_size()
         total_num_pos = reduce_sum(pos_inds.new_tensor([num_pos_local])).item()
         num_pos_avg = max(total_num_pos / num_gpus, 1.0)
-        device = labels.device
 
         # prepare one_hot (N, 1000)
         class_target = torch.zeros_like(instances.logits_pred)
@@ -425,10 +423,8 @@ class FCOSOutputs(nn.Module):
                 )
 
         else:
-            # reg_loss = torch.tensor(0).cuda()
-            # ctrness_loss = torch.tensor(0).cuda()
-            reg_loss = torch.tensor(0, device=device)
-            ctrness_loss = torch.tensor(0, device=device)
+            reg_loss = torch.tensor(0).cuda()
+            ctrness_loss = torch.tensor(0).cuda()
             loss_denorm = 1.0
 
         if instances.keep_locations.sum() == 0:
@@ -507,7 +503,6 @@ class FCOSOutputs(nn.Module):
         num_gpus = get_world_size()
         total_num_pos = reduce_sum(pos_inds.new_tensor([num_pos_local])).item()
         num_pos_avg = max(total_num_pos / num_gpus, 1.0)
-        device = labels.device
 
         # classification loss
         if "cls" in return_loss:
@@ -571,8 +566,7 @@ class FCOSOutputs(nn.Module):
                                 reg_student[select], reg_teacher[select], beta=0.0
                             )
                         else:
-                            # reg_loss = torch.tensor(0).cuda()
-                            reg_loss = torch.tensor(0, device=device)
+                            reg_loss = torch.tensor(0).cuda()
 
                     else:
                         iou_targets = compute_iou_targets(
@@ -597,13 +591,13 @@ class FCOSOutputs(nn.Module):
 
         else:
             if "ctr" in return_loss:
-                losses["loss_fcos_ctr"] = torch.tensor(0, device=device)
+                losses["loss_fcos_ctr"] = torch.tensor(0).cuda()
 
             loss_denorm = 1.0
 
             if "reg" in return_loss:
-                losses["loss_fcos_loc"] = torch.tensor(0, device=device)
-                losses["teacher_better_student"] = torch.tensor(0, device=device)
+                losses["loss_fcos_loc"] = torch.tensor(0).cuda()
+                losses["teacher_better_student"] = torch.tensor(0).cuda()
 
         # final check for multiple gpu running
         extras = {
@@ -787,7 +781,6 @@ class FCOSOutputs(nn.Module):
         boundary_vars = []
 
         xs, ys = locations[:, 0], locations[:, 1]
-        device = locations.device
 
         num_targets = 0
         for im_i in range(len(targets)):  # image-wise operation
@@ -818,7 +811,7 @@ class FCOSOutputs(nn.Module):
                 reg_targets.append(locations.new_zeros((locations.size(0), 4)))
                 boundary_vars.append(locations.new_zeros((locations.size(0), 4)))
                 target_inds.append(labels_per_im.new_zeros(locations.size(0)) - 1)
-                keep_locations.append(torch.zeros(xs.shape[0], device=device).to(bool))
+                keep_locations.append(torch.zeros(xs.shape[0]).to(bool).cuda())
                 continue
             area = targets_per_im.gt_boxes.area()
 
@@ -855,7 +848,7 @@ class FCOSOutputs(nn.Module):
                 keep_location = keep_location_bg + keep_location_fg
             else:
                 # keep all
-                keep_location = torch.ones(is_in_boxes.shape[0], device=device).to(bool)
+                keep_location = torch.ones(is_in_boxes.shape[0]).to(bool).cuda()
 
             # filter out these box is too small or too big for each scale
             max_reg_targets_per_im = reg_targets_per_im.max(dim=2)[0]
@@ -1159,8 +1152,6 @@ class FCOSOutputs(nn.Module):
         ctrness_pred = ctrness_pred.view(N, 1, H, W).permute(0, 2, 3, 1)
         ctrness_pred = ctrness_pred.reshape(N, -1).sigmoid()
 
-        device = logits_pred.device
-
         if reg_pred_cls is not None:
             box_reg_cls = (
                 reg_pred_cls[0]
@@ -1286,7 +1277,7 @@ class FCOSOutputs(nn.Module):
             if reg_pred_cls is not None:
                 boxlist.reg_pred_cls = per_box_reg_cls
                 boxlist.reg_pred_cls_scalar = (
-                    torch.ones(per_box_reg_cls.shape[0], device=device) * scalar
+                    torch.ones(per_box_reg_cls.shape[0]).cuda() * scalar
                 )
 
             if reg_pred_std is not None:
