@@ -28,6 +28,8 @@ def _setup():
     cfg.merge_from_file(CONFIG_OVERRIDES_PATH)
     cfg.freeze()
 
+    # default_setup(cfg, None)
+
     print('Built cfg: ', cfg)
     # if args.disable_amp:
     #     print(f'Disabling AMP. Was: {cfg.SOLVER.AMP.ENABLED}.')
@@ -62,4 +64,6 @@ def get_model():
             cfg.MODEL.WEIGHTS, resume=True,
         )
         res = model
-    return ModelWrapper(res)
+    wrapped = ModelWrapper(res, cfg)
+    wrapped.eval()
+    return wrapped
