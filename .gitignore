@@ -134,3 +134,6 @@ dmypy.json
 
 # model output
 output/
+
+# deploy artifacts
+zip_files/
