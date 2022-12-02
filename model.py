@@ -44,7 +44,7 @@ def get_model():
         model_teacher = Trainer.build_model(cfg)
         ensem_ts_model = EnsembleTSModel(model_teacher, model)
 
-        DetectionCheckpointer(
+        checkpoint = DetectionCheckpointer(
             ensem_ts_model, save_dir=cfg.OUTPUT_DIR, save_to_disk=False
         ).resume_or_load(cfg.MODEL.WEIGHTS, resume=True)
 
