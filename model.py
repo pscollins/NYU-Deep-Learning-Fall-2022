@@ -76,13 +76,22 @@ def get_model():
             print(f'Iteration {iteration} not near burn in time ({cfg.SEMISUPNET.BURN_UP_STEP}): use teacher.')
             res = ensem_ts_model.modelTeacher
 
-
     else:
+        # model = Trainer.build_model(cfg)
+        # model = Trainer.build_model(cfg)
+        # DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR, save_to_disk=False).resume_or_load(
+        #     cfg.MODEL.WEIGHTS, resume=True,
+        # )
+        # res = model
         model = Trainer.build_model(cfg)
-        DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR, save_to_disk=False).resume_or_load(
-            cfg.MODEL.WEIGHTS, resume=True,
-        )
-        res = model
+        model_teacher = Trainer.build_model(cfg)
+        ensem_ts_model = EnsembleTSModel(model_teacher, model)
+        checkpoint = DetectionCheckpointer(
+            ensem_ts_model, save_dir=cfg.OUTPUT_DIR, save_to_disk=False
+        ).resume_or_load(cfg.MODEL.WEIGHTS, resume=True)
+
+        res = ensem_ts_model.modelTeacher
+
     wrapped = ModelWrapper(res, cfg)
     wrapped.eval()
     return wrapped
