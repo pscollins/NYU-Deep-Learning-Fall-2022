@@ -25,7 +25,8 @@ from pycocotools.cocoeval import COCOeval
 
 # Edit this line with the path to your own labeled data.
 # We will overwrite it with the hidden test set when we grade.
-VALID_DATASET_PATH = "/data/labeled"
+# VALID_DATASET_PATH = "/data/labeled"
+VALID_DATASET_PATH = "data/labeled_data"
 
 try:
     # YOU MUST IMPLEMENT YOUR PROJECT IN A WAY THAT THIS WORKS
@@ -457,6 +458,7 @@ def evaluate(model, data_loader, device):
 
     coco = convert_to_coco_api(data_loader.dataset)
     coco_evaluator = CocoEvaluator(coco, ["bbox"])
+    print('evaluating') # DELETE
 
     for images, targets in metric_logger.log_every(data_loader, 100, header):
         images = list(img.to(device) for img in images)
@@ -488,12 +490,14 @@ def main():
 
     num_classes = 100
 
+    print('build dataset') # DELETE
     valid_dataset = LabeledDataset(
         root=VALID_DATASET_PATH,
         split="validation",
         transforms=lambda x, y: (torchvision.transforms.functional.to_tensor(x), y),
     )
 
+    print('build valid_loader') # DELETE
     valid_loader = torch.utils.data.DataLoader(
         valid_dataset,
         batch_size=1,

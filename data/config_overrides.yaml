@@ -1,0 +1,7 @@
+DATASETS:
+  TEST:
+  TRAIN:
+  TRAIN_LABEL:
+  TRAIN_UNLABEL:
+OUTPUT_DIR: 'data/weights'
+# OUTPUT_DIR: '/dev/null'
