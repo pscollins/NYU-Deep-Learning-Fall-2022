@@ -25,8 +25,7 @@ from pycocotools.cocoeval import COCOeval
 
 # Edit this line with the path to your own labeled data.
 # We will overwrite it with the hidden test set when we grade.
-# VALID_DATASET_PATH = "/data/labeled"
-VALID_DATASET_PATH = "data/labeled_data"
+VALID_DATASET_PATH = "/data/labeled"
 
 try:
     # YOU MUST IMPLEMENT YOUR PROJECT IN A WAY THAT THIS WORKS
@@ -250,8 +249,6 @@ class UnlabeledDataset(torch.utils.data.Dataset):
 
         self.image_dir = root
         self.num_images = len(os.listdir(self.image_dir))
-        # HACK: FASTER TESTS
-        # self.num_images = 10
 
     def __len__(self):
         return self.num_images
@@ -280,8 +277,6 @@ class LabeledDataset(torch.utils.data.Dataset):
         self.label_dir = os.path.join(root, split, "labels")
 
         self.num_images = len(os.listdir(self.image_dir))
-        # HACK: FASTER TESTS
-        # self.num_images = 1000
 
     def __len__(self):
         return self.num_images  # self.num_images
@@ -405,11 +400,7 @@ def convert_to_coco_api(ds):
     ann_id = 1
     dataset = {"images": [], "categories": [], "annotations": []}
     categories = set()
-    # TO_VISIT = min(len(ds), 10) # DELETE
-    TO_VISIT = len(ds)
-    # TO_VISIT = 10
-    # for img_idx in range(len(ds)):
-    for img_idx in range(TO_VISIT):
+    for img_idx in range(len(ds)):
         # find better way to get target
         # targets = ds.get_annotations(img_idx)
         img, targets = ds[img_idx]
@@ -451,7 +442,6 @@ def convert_to_coco_api(ds):
             ann_id += 1
     dataset["categories"] = [{"id": i} for i in sorted(categories)]
     coco_ds.dataset = dataset
-    print('going to create dataset') # DELETE
     coco_ds.createIndex()
     return coco_ds
 
@@ -467,7 +457,6 @@ def evaluate(model, data_loader, device):
 
     coco = convert_to_coco_api(data_loader.dataset)
     coco_evaluator = CocoEvaluator(coco, ["bbox"])
-    print('evaluating') # DELETE
 
     for images, targets in metric_logger.log_every(data_loader, 100, header):
         images = list(img.to(device) for img in images)
@@ -477,12 +466,6 @@ def evaluate(model, data_loader, device):
         outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
         model_time = time.time() - model_time
 
-        # print('target[0][labels]: ', targets[0]['labels'])
-        # if outputs[0]['boxes'].shape[0] != 0:
-        #     print('targets: ', targets)
-        #     print('inputs: ', images)
-        #     print('inputs, shape: ', images[0].shape)
-        #     print('outputs: ', outputs)
         res = {
             target["image_id"].item(): output
             for target, output in zip(targets, outputs)
@@ -505,14 +488,12 @@ def main():
 
     num_classes = 100
 
-    print('build dataset') # DELETE
     valid_dataset = LabeledDataset(
         root=VALID_DATASET_PATH,
         split="validation",
         transforms=lambda x, y: (torchvision.transforms.functional.to_tensor(x), y),
     )
 
-    print('build valid_loader') # DELETE
     valid_loader = torch.utils.data.DataLoader(
         valid_dataset,
         batch_size=1,
