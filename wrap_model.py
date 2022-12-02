@@ -39,8 +39,11 @@ class ModelWrapper(torch.nn.Module):
         self.inner_model = inner_model
         # self.augmentation = utils.build_augmentation(cfg, is_train=False)
         # self.resize = build_resize(cfg)
-        self.resize = torchvision_T.Resize(size=cfg.INPUT.MIN_SIZE_TEST,
-                                                          max_size=cfg.INPUT.MAX_SIZE_TEST)
+        if cfg.INPUT.MIN_SIZE_TEST:
+            self.resize = torchvision_T.Resize(size=cfg.INPUT.MIN_SIZE_TEST,
+                                           max_size=cfg.INPUT.MAX_SIZE_TEST)
+        else:
+            self.resize = lambda x: x
         self.cfg = cfg
 
     def _transform(self, img):
@@ -70,6 +73,12 @@ class ModelWrapper(torch.nn.Module):
 
     def forward(self, images):
         image_dict = [self.build_image_dict(x) for x in images]
-        preds =  self.inner_model(image_dict, nms_method=self.cfg.MODEL.FCOS.NMS_CRITERIA_TEST)
+        if self.cfg.SEMISUPNET.Trainer == 'ubteacher':
+            preds =  self.inner_model(image_dict, nms_method=self.cfg.MODEL.FCOS.NMS_CRITERIA_TEST)
+        elif self.cfg.SEMISUPNET.Trainer == 'ubteacher_rcnn':
+            preds =  self.inner_model(image_dict)
+        else:
+            raise ValueError('Unknown trainer: ', self.cfg.SEMISUPNET.Trainer)
+
         result = [instance_to_dict(pred['instances']) for pred in preds]
         return result
