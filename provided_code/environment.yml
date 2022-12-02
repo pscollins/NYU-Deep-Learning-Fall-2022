@@ -1,0 +1,29 @@
+name: project
+channels:
+  - conda-forge
+  - pytorch
+dependencies:
+  - python=3.9
+  - pip
+  - matplotlib
+  - jupyter
+  - jupyterlab
+  - pytorch=1.12
+  - torchvision=0.13
+  - opencv=4.6
+  - pycocotools=2.0.6
+  - pyyaml=6.0
+  - pytorch-lightning=1.7.7
+  - einops=0.4.1
+  - black
+  - isort
+  - pandas=1.5.1
+  - seaborn=0.12.1
+  - termcolor=2.1.0
+  - timm=0.4.12
+  - yacs=0.1.8
+  - mmcv-full=1.7
+  - mmdet=2.25
+  - ipdb
+  - pip:
+    - git+https://github.com/facebookresearch/detectron2.git@d1e04565d3bec8719335b88be9e9b961bf3ec464
