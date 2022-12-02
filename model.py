@@ -38,9 +38,9 @@ def _setup():
     """
     cfg = get_cfg()
     add_ubteacher_config(cfg)
-    # modernize_cfg(cfg)
-    cfg.merge_from_file(CONFIG_OVERRIDES_PATH)
+    modernize_cfg(cfg)
     cfg.merge_from_file(CONFIG_FILE_PATH)
+    cfg.merge_from_file(CONFIG_OVERRIDES_PATH)
     cfg.freeze()
     print('Built cfg: ', cfg)
 
