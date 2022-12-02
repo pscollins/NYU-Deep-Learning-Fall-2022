@@ -29,8 +29,8 @@ def instance_to_dict(instance):
 # def build_resize(cfg):
 #     min_size = cfg.INPUT.MIN_SIZE_TEST
 #     max_size = cfg.INPUT.MAX_SIZE_TEST
-#     # sample_style = "choice"
-#     # return T.ResizeShortestEdge(min_size, max_size, sample_style)
+    # sample_style = "choice"
+    # return T.ResizeShortestEdge(min_size, max_size, sample_style)
 #     return
 
 class ModelWrapper(torch.nn.Module):
@@ -41,6 +41,7 @@ class ModelWrapper(torch.nn.Module):
         # self.resize = build_resize(cfg)
         self.resize = torchvision_T.Resize(size=cfg.INPUT.MIN_SIZE_TEST,
                                                           max_size=cfg.INPUT.MAX_SIZE_TEST)
+        self.cfg = cfg
 
     def _transform(self, img):
         assert img.dim() == 3
@@ -48,20 +49,27 @@ class ModelWrapper(torch.nn.Module):
         img = img * 255.0
         # resize
         img = self.resize(img)
+        # cast to uint8
+        img = img.type(torch.uint8)
 
-        # transform = self.resize.get_transform(img)
-        # # img = transform.apply_image(torchvision_T.ToPILImage()(img))
-        # img = transform.apply_image(img.cpu().numpy())
+        # default format in detectron2 is BGR (configured with INPUT.FORMAT), so
+        # we trained with the channels flipped relative to what eval.py expects
+        img = torch.flip(img, [0])
         return img
 
 
+    def build_image_dict(self, image):
+        _, old_h, old_w = image.shape
+        return {
+            # resize + rescale to [0, 255]
+            'image': self._transform(image),
+            # populating H and W lets detectron2 do the un-resize
+            'height': old_h,
+            'width': old_w,
+        }
+
     def forward(self, images):
-        # print('images: ', images)
-        # unwrap along the batch axis and fix up
-        image_dict = [{'image': self._transform(x)} for x in images]
-        preds =  self.inner_model(image_dict)
-        # print('got preds: ', preds)
-        # TODO: SCALE BBOXES BACK DOWN
+        image_dict = [self.build_image_dict(x) for x in images]
+        preds =  self.inner_model(image_dict, nms_method=self.cfg.MODEL.FCOS.NMS_CRITERIA_TEST)
         result = [instance_to_dict(pred['instances']) for pred in preds]
-        # print('built result: ', result)
         return result

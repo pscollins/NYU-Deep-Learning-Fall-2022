@@ -279,9 +279,9 @@ class LabeledDataset(torch.utils.data.Dataset):
         self.image_dir = os.path.join(root, split, "images")
         self.label_dir = os.path.join(root, split, "labels")
 
-        # self.num_images = len(os.listdir(self.image_dir))
+        self.num_images = len(os.listdir(self.image_dir))
         # HACK: FASTER TESTS
-        self.num_images = 1000
+        # self.num_images = 1000
 
     def __len__(self):
         return self.num_images  # self.num_images
@@ -478,9 +478,11 @@ def evaluate(model, data_loader, device):
         model_time = time.time() - model_time
 
         # print('target[0][labels]: ', targets[0]['labels'])
-        if outputs[0]['boxes'].shape[0] != 0:
-            print('targets: ', targets)
-            print('outputs: ', outputs)
+        # if outputs[0]['boxes'].shape[0] != 0:
+        #     print('targets: ', targets)
+        #     print('inputs: ', images)
+        #     print('inputs, shape: ', images[0].shape)
+        #     print('outputs: ', outputs)
         res = {
             target["image_id"].item(): output
             for target, output in zip(targets, outputs)

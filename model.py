@@ -27,15 +27,7 @@ def _setup():
     cfg.merge_from_file(CONFIG_FILE_PATH)
     cfg.merge_from_file(CONFIG_OVERRIDES_PATH)
     cfg.freeze()
-
-    # default_setup(cfg, None)
-
     print('Built cfg: ', cfg)
-    # if args.disable_amp:
-    #     print(f'Disabling AMP. Was: {cfg.SOLVER.AMP.ENABLED}.')
-    #     cfg.defrost()
-    #     cfg.SOLVER.AMP.ENABLED = False
-    #     cfg.freeze()
 
     return cfg
 
@@ -56,7 +48,19 @@ def get_model():
             ensem_ts_model, save_dir=cfg.OUTPUT_DIR, save_to_disk=False
         ).resume_or_load(cfg.MODEL.WEIGHTS, resume=True)
 
-        res = ensem_ts_model.modelTeacher
+        # WARNING: Before unsupervised training begins, the teacher model is
+        # left uninitialized, and only the student is trained. After supervised
+        # training begins, the student is copied to the teacher, and the teacher
+        # becomes "ground truth." So we choose which model to use based on the
+        # iteration reported in the checkpoint.
+        iteration = checkpoint.get('iteration', -1) + 1
+        if iteration <= (cfg.SEMISUPNET.BURN_UP_STEP + 100):
+            print(f'Iteration {iteration} near burn in time ({cfg.SEMISUPNET.BURN_UP_STEP}): use student')
+            res = ensem_ts_model.modelStudent
+        else:
+            print(f'Iteration {iteration} not near burn in time ({cfg.SEMISUPNET.BURN_UP_STEP}): use teacher.')
+            res = ensem_ts_model.modelTeacher
+
 
     else:
         model = Trainer.build_model(cfg)

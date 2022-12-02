@@ -85,6 +85,14 @@ class PseudoProposalNetwork(nn.Module):
                 The dict contains one key "proposals" whose value is a
                 :class:`Instances` with keys "proposal_boxes" and "objectness_logits".
         """
+        # print(f'INPUTS: {batched_inputs}')
+        # print(f'INPUTS SHAPE: {batched_inputs[0]["image"].shape}')
+        # print(f'RRAW?: {output_raw}')
+        # print(f'NMS? {nms_method}')
+        # print(f'IGNORE? {ignore_near}')
+        # print(f'BRANCH? {branch}')
+        # import traceback
+        # traceback.print_stack()
         images = [x["image"].to(self.device) for x in batched_inputs]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
         images = ImageList.from_tensors(images, self.backbone.size_divisibility)
@@ -142,6 +150,7 @@ class PseudoProposalNetwork(nn.Module):
                 width = input_per_image.get("width", image_size[1])
                 ret = detector_postprocess(results_per_image, height, width)
                 processed_results.append({"proposals": ret})
+            # print('GOT RESULTS: ', results)
             return processed_results
 
 
