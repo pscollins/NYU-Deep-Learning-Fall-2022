@@ -12,7 +12,6 @@ from detectron2.utils.events import get_event_storage
 from detectron2.utils.logger import log_first_n
 from torch import nn
 
-
 def detector_postprocess(results, output_height, output_width, mask_threshold=0.5):
     """
     In addition to the post processing of detectron2, we add scalign for
@@ -85,6 +84,10 @@ class PseudoProposalNetwork(nn.Module):
                 The dict contains one key "proposals" whose value is a
                 :class:`Instances` with keys "proposal_boxes" and "objectness_logits".
         """
+        # if not hasttr(self, idx):
+        #     self.idx = 0
+        # print(f'CALL #{self.idx}')
+        # self.idx += 1
         # print(f'INPUTS: {batched_inputs}')
         # print(f'INPUTS SHAPE: {batched_inputs[0]["image"].shape}')
         # print(f'RRAW?: {output_raw}')
@@ -150,7 +153,7 @@ class PseudoProposalNetwork(nn.Module):
                 width = input_per_image.get("width", image_size[1])
                 ret = detector_postprocess(results_per_image, height, width)
                 processed_results.append({"proposals": ret})
-            # print('GOT RESULTS: ', results)
+            # print('GOT RESULTS: ', processed_results)
             return processed_results
 
 

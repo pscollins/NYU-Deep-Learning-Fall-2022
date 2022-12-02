@@ -277,6 +277,8 @@ class LabeledDataset(torch.utils.data.Dataset):
         self.label_dir = os.path.join(root, split, "labels")
 
         self.num_images = len(os.listdir(self.image_dir))
+        # # HACK
+        # self.num_images = 100
 
     def __len__(self):
         return self.num_images  # self.num_images
