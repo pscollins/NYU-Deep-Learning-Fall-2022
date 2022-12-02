@@ -18,14 +18,29 @@ CONFIG_OVERRIDES_PATH = 'data/config_overrides.yaml'
 CHECKPOINT_FILE_PATH = 'data/weights/checkpoint.pth'
 # CHECKPOINT_FILE_PATH = 'data/weights/checkpoint.pth'
 
+def modernize_cfg(cfg):
+    # define some variables that otherwise cause issues
+    _C = cfg
+
+    _C.SOLVER.BASE_LR_END = 0.0
+    _C.SOLVER.RESCALE_INTERVAL = False
+    _C.SOLVER.NUM_DECAYS = 3
+
+    _C.MODEL.ROI_BOX_HEAD.USE_SIGMOID_CE = False
+    _C.MODEL.ROI_BOX_HEAD.USE_FED_LOSS = False
+    _C.MODEL.ROI_BOX_HEAD.FED_LOSS_NUM_CLASSES = 50
+    _C.MODEL.ROI_BOX_HEAD.FED_LOSS_FREQ_WEIGHT_POWER = .5
+
+
 def _setup():
     """
     Create configs and perform basic setups.
     """
     cfg = get_cfg()
     add_ubteacher_config(cfg)
-    cfg.merge_from_file(CONFIG_FILE_PATH)
+    modernize_cfg(cfg)
     cfg.merge_from_file(CONFIG_OVERRIDES_PATH)
+    cfg.merge_from_file(CONFIG_FILE_PATH)
     cfg.freeze()
     print('Built cfg: ', cfg)
 
