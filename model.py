@@ -32,7 +32,7 @@ def modernize_cfg(cfg):
     _C.MODEL.ROI_BOX_HEAD.FED_LOSS_FREQ_WEIGHT_POWER = .5
 
 
-def _setup():
+def _setup(args):
     """
     Create configs and perform basic setups.
     """
@@ -41,13 +41,15 @@ def _setup():
     modernize_cfg(cfg)
     cfg.merge_from_file(CONFIG_FILE_PATH)
     cfg.merge_from_file(CONFIG_OVERRIDES_PATH)
+    if args is not None:
+        cfg.merge_from_list(args.opts)
     cfg.freeze()
     print('Built cfg: ', cfg)
 
     return cfg
 
-def get_model():
-    cfg = _setup()
+def get_model(args=None):
+    cfg = _setup(args)
 
     if cfg.SEMISUPNET.Trainer == "ubteacher":
         Trainer = trainer.UBTeacherTrainer
@@ -69,6 +71,8 @@ def get_model():
         # becomes "ground truth." So we choose which model to use based on the
         # iteration reported in the checkpoint.
         iteration = checkpoint.get('iteration', -1) + 1
+        if iteration == 0:
+            print('WARNING: Failed to load checkpoint!')
         if iteration <= (cfg.SEMISUPNET.BURN_UP_STEP + 100):
             print(f'Iteration {iteration} near burn in time ({cfg.SEMISUPNET.BURN_UP_STEP}): use student')
             res = ensem_ts_model.modelStudent
@@ -77,12 +81,6 @@ def get_model():
             res = ensem_ts_model.modelTeacher
 
     else:
-        # model = Trainer.build_model(cfg)
-        # model = Trainer.build_model(cfg)
-        # DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR, save_to_disk=False).resume_or_load(
-        #     cfg.MODEL.WEIGHTS, resume=True,
-        # )
-        # res = model
         model = Trainer.build_model(cfg)
         model_teacher = Trainer.build_model(cfg)
         ensem_ts_model = EnsembleTSModel(model_teacher, model)
