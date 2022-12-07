@@ -32,6 +32,8 @@ from model import get_model
 
 def build_argument_parser():
     parser = default_argument_parser()
+    parser.add_argument('--limit-input-count', type=int, default=-1,
+                        help='Limit number of eval images, for quicker iterations')
     return parser
 
 class SmoothedValue(object):
@@ -460,6 +462,8 @@ def main(args):
         split="validation",
         transforms=lambda x, y: (torchvision.transforms.functional.to_tensor(x), y),
     )
+    if args.limit_input_count > -1:
+        valid_dataset.num_images = args.limit_input_count
 
     valid_loader = torch.utils.data.DataLoader(
         valid_dataset,
