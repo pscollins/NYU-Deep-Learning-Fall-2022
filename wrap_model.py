@@ -40,8 +40,9 @@ class ModelWrapper(torch.nn.Module):
         # self.augmentation = utils.build_augmentation(cfg, is_train=False)
         # self.resize = build_resize(cfg)
         if cfg.INPUT.MIN_SIZE_TEST:
+            max_size = cfg.INPUT.MAX_SIZE_TEST or None
             self.resize = torchvision_T.Resize(size=cfg.INPUT.MIN_SIZE_TEST,
-                                           max_size=cfg.INPUT.MAX_SIZE_TEST)
+                                               max_size=max_size)
         else:
             self.resize = lambda x: x
         self.cfg = cfg
