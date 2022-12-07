@@ -556,7 +556,8 @@ class FCOSOutputs(nn.Module):
                             loc_conf_teacher > loc_conf_student + self.tsbetter_reg
                         )
 
-                        losses["teacher_better_student"] = select.sum()
+                        # losses["teacher_better_student"] = select.sum()
+                        losses["teacher_better_student"] = torch.tensor(0).cuda()
 
                         reg_student = reg_pred
                         reg_teacher = instances.reg_targets
