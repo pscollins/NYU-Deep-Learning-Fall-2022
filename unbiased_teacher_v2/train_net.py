@@ -37,6 +37,8 @@ def build_argument_parser():
                         help='Replace batch norm with sync batch norm.')
     parser.add_argument('--ddp-teacher', action='store_true',
                         help='Wrap teacher in DDP')
+    parser.add_argument('--eval-with-student', action='store_true',
+                        help='Use student model for --eval-only')
 
     return parser
 
@@ -123,7 +125,8 @@ def main(args):
             DetectionCheckpointer(
                 ensem_ts_model, save_dir=cfg.OUTPUT_DIR
             ).resume_or_load(cfg.MODEL.WEIGHTS, resume=args.resume)
-            res = Trainer.test(cfg, ensem_ts_model.modelTeacher)
+            eval_model = ensem_ts_model.modelStudent if args.eval_with_student else ensem_ts_model.modelTeacher
+            res = Trainer.test(cfg, eval_model)
 
         else:
             model = Trainer.build_model(cfg)
