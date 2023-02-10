@@ -1,100 +1,100 @@
-airplane: 0
-antelope: 1
-apple: 2
-artichoke: 3
-axe: 4
-baby bed: 5
-backpack: 6
-bagel: 7
-banana: 8
-bathing cap: 9
-beaker: 10
-bear: 11
-bell pepper: 12
-bench: 13
-bicycle: 14
-bird: 15
-bookshelf: 16
-bowl: 17
-bus: 18
-butterfly: 19
-camel: 20
-car: 21
-cart: 22
-cattle: 23
-chair: 24
-coffee maker: 25
-computer keyboard: 26
-cream: 27
-croquet ball: 28
-crutch: 29
-cucumber: 30
-cup or mug: 31
-dog: 32
-domestic cat: 33
-dragonfly: 34
-drum: 35
-dumbbell: 36
-elephant: 37
-fig: 38
-flower pot: 39
-fox: 40
-frog: 41
-goldfish: 42
-guitar: 43
-harp: 44
-hat with a wide brim: 45
-helmet: 46
-hippopotamus: 47
-horse: 48
-jellyfish: 49
-koala bear: 50
-ladybug: 51
-lamp: 52
-laptop: 53
-lemon: 54
-lizard: 55
-lobster: 56
-microphone: 57
-miniskirt: 58
-monkey: 59
-motorcycle: 60
-mushroom: 61
-nail: 62
-orange: 63
-otter: 64
-person: 65
-piano: 66
-pitcher: 67
-pomegranate: 68
-porcupine: 69
-pretzel: 70
-purse: 71
-rabbit: 72
-ray: 73
-red panda: 74
-salt or pepper shaker: 75
-seal: 76
-sheep: 77
-ski: 78
-skunk: 79
-snake: 80
-sofa: 81
-starfish: 82
-stove: 83
-strawberry: 84
-sunglasses: 85
-swine: 86
-table: 87
-tape player: 88
-tie: 89
-tiger: 90
-traffic light: 91
-train: 92
-turtle: 93
-tv or monitor: 94
-violin: 95
-watercraft: 96
-whale: 97
-wine bottle: 98
-zebra: 99
+airplane: 9
+antelope: 71
+apple: 70
+artichoke: 20
+axe: 95
+baby bed: 75
+backpack: 30
+bagel: 42
+banana: 56
+bathing cap: 77
+beaker: 92
+bear: 13
+bell pepper: 41
+bench: 45
+bicycle: 29
+bird: 1
+bookshelf: 39
+bowl: 8
+bus: 58
+butterfly: 48
+camel: 60
+car: 11
+cart: 65
+cattle: 72
+chair: 23
+coffee maker: 74
+computer keyboard: 18
+cream: 61
+croquet ball: 97
+crutch: 78
+cucumber: 85
+cup or mug: 0
+dog: 4
+domestic cat: 10
+dragonfly: 83
+drum: 52
+dumbbell: 81
+elephant: 66
+fig: 68
+flower pot: 47
+fox: 32
+frog: 76
+goldfish: 84
+guitar: 34
+harp: 87
+hat with a wide brim: 2
+helmet: 24
+hippopotamus: 53
+horse: 64
+jellyfish: 88
+koala bear: 79
+ladybug: 55
+lamp: 28
+laptop: 16
+lemon: 43
+lizard: 5
+lobster: 62
+microphone: 35
+miniskirt: 59
+monkey: 57
+motorcycle: 91
+mushroom: 31
+nail: 94
+orange: 44
+otter: 33
+person: 3
+piano: 46
+pitcher: 19
+pomegranate: 50
+porcupine: 12
+pretzel: 90
+purse: 49
+rabbit: 93
+ray: 15
+red panda: 26
+salt or pepper shaker: 96
+seal: 63
+sheep: 6
+ski: 54
+skunk: 98
+snake: 67
+sofa: 40
+starfish: 99
+stove: 37
+strawberry: 36
+sunglasses: 27
+swine: 89
+table: 22
+tape player: 14
+tie: 80
+tiger: 82
+traffic light: 25
+train: 51
+turtle: 86
+tv or monitor: 21
+violin: 38
+watercraft: 69
+whale: 73
+wine bottle: 7
+zebra: 17

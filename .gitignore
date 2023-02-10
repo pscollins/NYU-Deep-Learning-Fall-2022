@@ -127,3 +127,13 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# emacs temp files
+.#*
+*~undo-tree~
+
+# model output
+output/
+
+# deploy artifacts
+zip_files/

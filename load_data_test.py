@@ -1,7 +1,9 @@
+import load_data
+
 import unittest
 
-import load_data
 import torch
+import torchvision
 
 Label = load_data.Label
 
@@ -90,7 +92,11 @@ labels:
 
     def test_load_class_index(self):
         class_index = load_data.load_class_index()
-        self.assertEqual(class_index['fig'], 38)
+        self.assertEqual(class_index['fig'], 68)
+
+    def test_load_inverted_class_index(self):
+        inverted_class_index = load_data.load_inverted_class_index()
+        self.assertEqual(inverted_class_index[68], 'fig')
 
     def test_load_dataset(self):
         ds = load_data.LabeledDataset(root_dir=load_data.VALIDATION_DATA_ROOT)
@@ -139,7 +145,320 @@ labels:
         torch.testing.assert_close(augmented, torch.zeros((4, 4)))
 
 
+    def test_crop_tensor_to_bbox(self):
+        img = torch.ones(1, 150, 100)
+        bboxes_and_expecteds = [
+            ([0, 0, 100, 100], (100, 100)),
+            ([0, 100, 100, 150], (50, 100)),
+            ([0, 0, 1, 1], (1, 1)),
+            ([1, 1, 2, 2], (1, 1)),
+            (torch.tensor([0, 0, 1, 1]), (1, 1)),
+        ]
 
+        for bbox, expected in bboxes_and_expecteds:
+            cropped = load_data.crop_tensor_to_bbox(img, bbox)
+            self.assertEqual(cropped.shape, (1,) + expected)
+
+
+    def test_classifier_dataset_fake(self):
+        class FakeDataset:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __len__(self):
+                return 1
+
+            def __getitem__(self, idx):
+                img = torch.ones(1, 100, 100)
+                bboxes = torch.tensor([
+                    [0, 0, 1, 1],
+                    [0, 0, 2, 2]
+                    ])
+                classes = torch.tensor([12, 155])
+
+                return (img, bboxes, classes)
+
+        ds = load_data.ClassifierDataset(root_dir='', dataset_factory=FakeDataset)
+
+        MAX_ATTEMPTS = 100
+
+        seen_classes = set()
+        for _ in range(MAX_ATTEMPTS):
+            img, class_idx = ds[0]
+            seen_classes.add(class_idx)
+            expected_shape = {
+                12: (1, 1, 1),
+                155: (1, 2, 2),
+            }[class_idx.item()]
+            self.assertEqual(img.shape, expected_shape)
+
+            if len(seen_classes) == 2:
+                # success, we saw both classes
+                return
+
+        # fail the test
+        self.assertTrue(False)
+
+    def test_classifier_dataset_basic(self):
+        # just verify that things look reasonable
+        idx_to_class = load_data.load_inverted_class_index()
+
+        COUNT = 5
+        ds = load_data.ClassifierDataset(root_dir=load_data.TRAINING_DATA_ROOT)
+        for i in range(5):
+            img, class_idx = ds[i]
+            self.assertIn(class_idx.item(), idx_to_class)
+            # 3 channels
+            self.assertEqual(3, img.shape[0])
+
+    def test_classifier_dataset_resize(self):
+        # just verify that things look reasonable
+        idx_to_class = load_data.load_inverted_class_index()
+
+        COUNT = 5
+        resize = torchvision.transforms.Resize(224)
+        ds = load_data.ClassifierDataset(root_dir=load_data.TRAINING_DATA_ROOT,
+                                         outer_transform=resize)
+        for i in range(5):
+            img, class_idx = ds[i]
+            self.assertIn(class_idx.item(), idx_to_class)
+            # 3 channels
+            self.assertEqual(3, img.shape[0])
+            # resize increases the shorter side
+            self.assertLessEqual(224, min(img.shape[1:]))
+
+
+    def test_detr_coco_wrapper(self):
+        fake_ds = {
+            0: (
+                # image
+                torch.ones((3, 10, 10)),
+                # bboxes
+                torch.ones((4, 10)),
+                # classes
+                torch.ones(4),
+            ),
+            2: (
+                # image
+                torch.zeros((3, 10, 11)),
+                # bboxes
+                torch.zeros((4, 10)),
+                # classes
+                torch.zeros(4),
+            )
+            }
+
+        ds = load_data.DetrCocoWrapper(fake_ds)
+
+
+        img_0, target_0 = ds[0]
+        self.assertEqual(target_0['image_id'], 0)
+        torch.testing.assert_close(img_0, fake_ds[0][0])
+        torch.testing.assert_close(target_0['boxes'], fake_ds[0][1])
+        torch.testing.assert_close(target_0['labels'], fake_ds[0][2])
+        torch.testing.assert_close(target_0['orig_size'], torch.tensor([10, 10]))
+
+
+        img_2, target_2 = ds[2]
+        self.assertEqual(target_2['image_id'], 2)
+        torch.testing.assert_close(img_2, fake_ds[2][0])
+        torch.testing.assert_close(target_2['boxes'], fake_ds[2][1])
+        torch.testing.assert_close(target_2['labels'], fake_ds[2][2])
+        torch.testing.assert_close(target_2['orig_size'], torch.tensor([10, 11]))
+        # TODO(pscollins): test for PIL case
+
+
+    def test_detr_coco_wrapper_transform(self):
+        fake_ds = {
+            0: (
+                # image
+                torch.ones((3, 10, 10)),
+                # bboxes
+                torch.ones((4, 10)),
+                # classes
+                torch.ones(4),
+            ),
+        }
+
+        def transform(img, target):
+            torch.testing.assert_close(img, fake_ds[0][0])
+            target['boxes'] = target['boxes'] * 2
+            return img, target
+
+        ds = load_data.DetrCocoWrapper(fake_ds, transform=transform)
+
+        img_0, target_0 = ds[0]
+        self.assertEqual(target_0['image_id'], 0)
+        torch.testing.assert_close(img_0, fake_ds[0][0])
+        torch.testing.assert_close(target_0['boxes'], torch.ones((4, 10)) * 2)
+
+
+    def test_boxes_to_coco(self):
+        image = torch.ones((1, 10, 10))
+        target = {
+            'boxes': torch.tensor([
+                [0, 0, 1, 1],
+                [1, 1, 2, 2],
+                [0, 0, 2, 3]
+                ])
+            }
+
+        transformed_image, transformed_target = load_data.bboxes_to_coco(image, target)
+
+        torch.testing.assert_close(transformed_image, image)
+        expected_boxes = torch.tensor([
+            [0, 0, 1, 1],
+            [1, 1, 1, 1],
+            [0, 0, 2, 3],
+            ])
+        torch.testing.assert_close(transformed_target['boxes'], expected_boxes)
+
+    def test_coco_annotation_builder(self):
+        ds = load_data.LabeledDataset(load_data.TRAINING_DATA_ROOT)
+        # trim to first 5
+        ds.examples_by_index = ds.examples_by_index[:5]
+
+        coco_builder = load_data.CocoAnnotationBuilder(ds)
+
+        result = coco_builder.build_coco()
+
+        want_keys = list(sorted(["info", "images", "annotations",
+                                 "licenses", "categories"]))
+        self.assertEqual(want_keys, list(sorted(result.keys())))
+
+        images = result['images']
+        self.assertEqual(len(images), 5)
+        annotations = result['annotations']
+        self.assertLessEqual(len(images), len(annotations))
+
+        class_index = load_data.load_class_index()
+
+        for want_id, image in enumerate(images):
+            self.assertEqual(image['id'], want_id)
+            # filenames start from 1.JPEG
+            self.assertEqual(image['file_name'], f'{want_id+1}.JPEG')
+            want_id
+
+        for want_id, annotation in enumerate(annotations):
+            self.assertEqual(want_id, annotation['id'])
+            # verify that the corresponding image exists
+            img = result['images'][annotation['image_id']]
+            img_h = img['height']
+            img_w = img['width']
+            x, y, w, h = annotation['bbox']
+            self.assertLessEqual(0, x)
+            self.assertLessEqual(0, y)
+            self.assertLess(0, w)
+            self.assertLess(0, h)
+
+            self.assertLess(x, img_w)
+            self.assertLess(x + w, img_w)
+            self.assertLess(y, img_h)
+            self.assertLess(y + h, img_h)
+
+            category = result['categories'][annotation['category_id']]
+            self.assertIn(category['name'], class_index)
+            self.assertIn(category['supercategory'], class_index)
+
+
+    def test_build_coco_annotaiton(self):
+        class FakeDataset:
+            def __init__(self):
+                self.examples_by_index = [("my/image/path.jpeg", "")]
+                self._loaded_examples = [
+                    (
+                        torch.ones((1, 20, 30)), # image
+                        torch.tensor([ # bboxes
+                            [0, 0, 1, 1],
+                            [1, 1, 2, 2],
+                            [0, 1, 1, 2],
+                        ]),
+                        torch.tensor([1, 2, 3]) # classes
+                    ),
+                ]
+            def __len__(self):
+                return len(self._loaded_examples)
+
+            def __getitem__(self, idx):
+                return self._loaded_examples[idx]
+
+        coco_builder = load_data.CocoAnnotationBuilder(FakeDataset())
+
+        image, annotations = coco_builder.build_idx(0)
+
+        self.assertEqual(image['width'], 30)
+        self.assertEqual(image['height'], 20)
+        self.assertEqual(image['file_name'], 'path.jpeg')
+
+        self.assertEqual(3, len(annotations))
+        want_bboxes = [
+            [0, 0, 1, 1],
+            [1, 1, 1, 1],
+            [0, 1, 1, 1],
+        ]
+        want_classes = [1, 2, 3]
+        want_area = [1, 1, 1, 1]
+        for idx, annotation in enumerate(annotations):
+            self.assertEqual(annotation['bbox'], want_bboxes[idx])
+            self.assertEqual(annotation['category_id'], want_classes[idx])
+            self.assertEqual(annotation['area'], float(want_area[idx]))
+
+
+    def test_unlabeled_dataset_shim(self):
+        ds = load_data.UnlabeledDatasetLabelShim(root_dir=load_data.UNLABLED_DATA_ROOT)
+
+        img, bboxes, classes = ds[0]
+
+        self.assertEqual(img.dim(), 3)
+        # C, H, W
+        self.assertEqual(img.shape[0], 3)
+        # No classes, no bboxes
+        self.assertEqual(list(bboxes.shape), [0])
+        self.assertEqual(list(classes.shape), [0])
+
+
+    def test_build_unlabled_annotations(self):
+        ds = load_data.UnlabeledDatasetLabelShim(root_dir=load_data.UNLABLED_DATA_ROOT)
+        # Just keep a few images, for quicker tests.
+        ds.examples_by_index = ds.examples_by_index[:5]
+        coco_builder = load_data.CocoAnnotationBuilder(ds)
+
+        result = coco_builder.build_coco()
+
+        self.assertEqual(len(result['images']), 5)
+        # No annotations for this dataset
+        self.assertEqual(len(result['annotations']), 0)
+
+
+    def test_handle_corrupt_input(self):
+        class FakeDataset:
+            def __init__(self):
+                self.examples_by_index = [("my/image/path.jpeg", "")] * 3
+                self._loaded_examples = [
+                    (
+                        torch.ones((1, 20, 30)), # image
+                        torch.tensor([ # bboxes
+                            [0, 0, 1, 1],
+                            [1, 1, 2, 2],
+                            [0, 1, 1, 2],
+                        ]),
+                        torch.tensor([1, 2, 3]) # classes
+                    ),
+                ] * 3
+            def __len__(self):
+                return len(self._loaded_examples)
+
+            def __getitem__(self, idx):
+                if idx == 1:
+                    raise ValueError('Corrupt image!')
+                return self._loaded_examples[idx]
+
+        coco_builder = load_data.CocoAnnotationBuilder(FakeDataset())
+        results = coco_builder.build_coco()
+
+        # Verify that the corrupt image in the middle was dropped
+        self.assertEqual(2, len(results['images']))
+        self.assertEqual(6, len(results['annotations']))
 
 
 

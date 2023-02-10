@@ -3,11 +3,13 @@ from typing import List
 import collections
 import os
 
+import PIL
 import torch
 import torchvision
 import dataclasses
 import yaml
 
+from PIL import Image
 
 
 DATA_ROOT = 'data/'
@@ -36,6 +38,12 @@ def load_class_index():
         result = yaml.safe_load(f)
     assert len(result) == 100
     return result
+
+def load_inverted_class_index():
+    class_index = load_class_index()
+    return {
+        v: k for k, v in class_index.items()
+    }
 
 def collect_paths_by_index(paths):
     def clean(path):
@@ -80,12 +88,37 @@ def parse_labels(labels_yaml):
         in zip(bboxes, labels)
     ]
 
+def crop_tensor_to_bbox(img, bbox):
+    # TODO(pscollins): consider batching
+    if isinstance(bbox, torch.Tensor):
+        x0, y0, x1, y1 = bbox.tolist()
+    else:
+        x0, y0, x1, y1 = bbox
+    dx = x1 - x0
+    dy = y1 - y0
+
+    cropped = torchvision.transforms.functional.crop(
+        img,
+        top=y0,
+        left=x0,
+        height=dy,
+        width=dx)
+    return cropped
+
+
+# https://pytorch.org/vision/main/_modules/torchvision/datasets/folder.html#ImageFolder
+def pil_loader(path: str):
+    # open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
+    with open(path, "rb") as f:
+        img = Image.open(f)
+        return img.convert("RGB")
 
 class LabeledDataset(torch.utils.data.Dataset):
     # transforms must have the signature
     #   (image_tensor, bboxes_tensor, class_tensor) ->
     #     (image_tensor, bboxes_tensor, class_tensor)
-    def __init__(self, root_dir, transform=lambda *x: x):
+    def __init__(self, root_dir, load_image=torchvision.io.read_image,
+                 transform=lambda *x: x):
         unsorted_examples_by_index = collect_examples_by_index(
             image_paths=get_labeled_image_paths(root_dir),
             label_paths=get_labeled_label_paths(root_dir)
@@ -99,18 +132,23 @@ class LabeledDataset(torch.utils.data.Dataset):
 
         self.class_index = load_class_index()
         self.transform = transform
+        self.load_image = load_image
 
         # TODO(pscollins): Add an option to prefetch into memory for faster
         # loading.
-
 
     def __len__(self):
         return len(self.examples_by_index)
 
 
+    # returns (image, bboxes, classes)
+    # with shape:
+    #  ([C, H, W], [N, H, W], [N])
+    #
+    # where N is the number of bounding boxes in the specified image.
     def __getitem__(self, idx):
         image_path, label_path = self.examples_by_index[idx]
-        image_tensor = torchvision.io.read_image(image_path)
+        image_tensor = self.load_image(image_path)
 
         with open(label_path, 'r') as f:
             labels = parse_labels(f.read())
@@ -124,6 +162,37 @@ class LabeledDataset(torch.utils.data.Dataset):
 
 
 
+# Returns crops from the labeled dataset corresponding to a single bounding
+# box. For images containing multiple bounding boxes, a random one is chosen.
+class ClassifierDataset(torch.utils.data.Dataset):
+    def __init__(self, root_dir, load_image=torchvision.io.read_image,
+                 inner_transform=lambda *x: x,
+                 outer_transform=lambda x: x, dataset_factory=LabeledDataset):
+        # inner_transform must have the signature for LabeledDataset's transform.
+        #
+        # outer_transform must have the signature
+        #   (image_tensor) -> (image_tensor)
+        self.labeled_dataset = dataset_factory(root_dir,
+                                               load_image=load_image,
+                                               transform=inner_transform)
+        self.outer_transform = outer_transform
+
+    def __len__(self):
+        # just 1 crop per image, so no need to count bboxes
+        return len(self.labeled_dataset)
+
+    # returns (image, class)
+    # with shape
+    #   ([C, H, W], [1])
+    def __getitem__(self, idx):
+        img, bboxes, classes = self.labeled_dataset[idx]
+
+        bbox_idx = torch.randint(low=0, high=len(bboxes), size=(1,)).item()
+        cropped = crop_tensor_to_bbox(img, bboxes[bbox_idx])
+        cropped = self.outer_transform(cropped)
+        return (cropped, classes[bbox_idx])
+
+
 # Returns data of the form
 #    (augmented, original)
 # where
@@ -131,11 +200,18 @@ class LabeledDataset(torch.utils.data.Dataset):
 #   augmented = augment(original)
 class UnlabeledDataset(torch.utils.data.Dataset):
     # transform and augment
-    def __init__(self, root_dir=UNLABLED_DATA_ROOT, transform=lambda x: x, augment=lambda x: x):
+    def __init__(self, root_dir=UNLABLED_DATA_ROOT, transform=lambda x: x, augment=lambda x: x,
+                 read_image=torchvision.io.read_image):
         # sort for determinism
+        if root_dir is None:
+            root_dir = UNLABLED_DATA_ROOT
+        # TODO(pscollins): shuffle?
         self.image_paths = list(sorted(_get_relative_paths_below(root_dir)))
         self.transform = transform
         self.augment = augment
+
+        # SWaV expects PIL images, so for SWAaV we override this function with PIL.image.open
+        self.read_image = read_image
 
         # TODO(pscollins): Prefetching?
 
@@ -144,7 +220,218 @@ class UnlabeledDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         path = self.image_paths[idx]
-        img = torchvision.io.read_image(path)
+
+        # work around corrupt images in input
+        while True:
+            try:
+                # img = torchvision.io.read_image(path)
+                img = self.read_image(path)
+                break
+            except:
+                print(f'WARNING: corrupt image at {path}')
+                # use a different, random image instead to work around corruption
+                path = self.image_paths[torch.randint(low=0, high=len(self.image_paths),
+                                                      size=(1,))[0]]
+
         img = self.transform(img)
         augmented = self.augment(img)
         return (augmented, img)
+
+
+# Presents the interface of LabeledDataset to the unlabled dataset, so that we
+# can build an annotations.json for it.
+class UnlabeledDatasetLabelShim(torch.utils.data.Dataset):
+    def __init__(self, root_dir):
+        # TODO(pscollins): shuffle?
+        image_paths = list(sorted(_get_relative_paths_below(root_dir)))
+        self.examples_by_index = [
+            (image_path, None)
+            for image_path in image_paths
+        ]
+
+    def __len__(self):
+        return len(self.examples_by_index)
+
+    def __getitem__(self, idx):
+        path, _ = self.examples_by_index[idx]
+        # Do not suppress the exception if this image is corrupt: the caller is
+        # responsible for handling it.
+        img = torchvision.io.read_image(path)
+        return (img, torch.tensor([]), torch.tensor([]))
+
+class PrefetchingDataset(torch.utils.data.Dataset):
+    def __init__(self, root_dir):
+        self.entries = [
+            img for augmented, img in delegate
+        ]
+
+    def __len__(self):
+        return len(self.entries)
+
+    def __getitem__(self, idx):
+        return self.entries[idx]
+
+def bboxes_to_coco(image, target):
+    # https://github.com/cocodataset/cocoapi/issues/102
+    x0, y0, x1, y1 = target['boxes'].unbind(-1)
+    # assert torch.all(x0 <= x1)
+    # assert torch.all(y0 <= y1)
+    target['boxes'] = torch.stack((x0, y0, x1 - x0, y1 - y0), dim=-1)
+    return image, target
+
+class DetrCocoWrapper(torch.utils.data.Dataset):
+    # transform has the signature
+    #   (image, target_dict) ->
+    #     (image, target_dict)
+    def __init__(self, labeled_dataset, transform=lambda *x: x):
+        self.labeled_dataset = labeled_dataset
+        self.transform = transform
+
+
+    def __len__(self):
+        return len(self.labeled_dataset)
+
+    def __getitem__(self, idx):
+        image, bboxes, classes = self.labeled_dataset[idx]
+        assert bboxes.shape[0] == classes.shape[0]
+
+        if isinstance(image, torch.Tensor):
+            c, h, w = image.shape
+        else:
+            assert isinstance(image, PIL.Image.Image)
+            w, h = image.size
+
+        # just fill in what's needed for
+        # https://github.com/facebookresearch/detr/blob/8a144f83a287f4d3fece4acdf073f387c5af387d/models/detr.py#L83
+        target = {
+            'image_id': torch.tensor(idx),
+            # [N, 4]
+            'boxes': bboxes,
+            # [N]
+            'labels': classes,
+            # for compatibility with 'evaluate' in engine.py
+            'orig_size': torch.tensor([h, w])
+            }
+
+        # ([C, H, W], {...})
+        return self.transform(image, target)
+
+
+# Builds a dictionary correspondsing to the object detection format described in
+# https://cocodataset.org/#format-data for the specified dataset.
+class CocoAnnotationBuilder:
+    LOG_EVERY_N = 100
+
+    # ds: LabeledDataset
+    def __init__(self, ds):
+        self.image_id = -1
+        self.annotation_id = -1
+        self.ds = ds
+
+    # Loads `idx` from the dataset and converts the resulting (image_tensor,
+    # bboxes_tensor, class_tensor) into a pair
+    #
+    #   (coco_image, coco_annotations)
+    #
+    # where coco_iamge is a dictionary satisfying the "image" COCO annotation,
+    # and coco_annotations is a list of dictionaries satisfying the "annotation"
+    # COCO annotation format.
+    def build_idx(self, idx):
+        try:
+            image, bboxes, classes = self.ds[idx]
+        except Exception as e:
+            print(f'Error loading image at index {idx}, skipping')
+            return (None, [])
+
+        image_path, _ = self.ds.examples_by_index[idx]
+
+        self.image_id += 1
+
+        if (self.image_id % self.LOG_EVERY_N) == 0 and (self.image_id > 0):
+            print(f'Processing image #{self.image_id}')
+
+        c, h, w = image.shape
+        coco_image = {
+            'id': self.image_id,
+            'width': w,
+            'height': h,
+            'file_name': os.path.basename(image_path),
+            'license': 0,
+            'flickr_url': '',
+            'coco_url': '',
+            # arbitrary date picked from coco2017val.json
+            'date_captured': '2013-11-14 17:02:52'
+        }
+        return (coco_image, self._build_annotations(bboxes, classes))
+
+    def _build_annotations(self, bboxes, classes):
+        assert bboxes.shape[0] == classes.shape[0]
+        def tensors_to_floats(ts):
+            return [float(t) for t in ts]
+
+        def bbox_to_coco(bbox):
+            assert list(bbox.shape) == [4], f'Unexpected bbox shape: {bbox.shape}'
+            x0, y0, x1, y1 = tensors_to_floats(bbox)
+            # x0, y0, w, h
+            return [x0, y0, x1 - x0, y1 - y0]
+
+        def area(bbox):
+            _, _, w, h = bbox_to_coco(bbox)
+            return float(w * h)
+
+
+        def build_annotation(bbox, cls):
+            self.annotation_id += 1
+            return {
+                'id': self.annotation_id,
+                'image_id': self.image_id,
+                'category_id': cls.item(),
+                'segmentation': [],
+                'bbox': bbox_to_coco(bbox),
+                'area': area(bbox),
+                'iscrowd': 0
+            }
+
+        return [
+            build_annotation(bbox, cls)
+            for bbox, cls
+            in zip(bboxes, classes)
+        ]
+
+    def _build_categories(self):
+        return [
+            {
+                'id': key,
+                'name': value,
+                'supercategory': value,
+            }
+            for key, value in load_inverted_class_index().items()
+        ]
+
+    def build_coco(self):
+        images_and_annotation_lists = [
+            self.build_idx(idx) for idx
+            in range(len(self.ds))
+        ]
+        images, annotation_lists = zip(*images_and_annotation_lists)
+        coco = {
+            'info': {
+                'year': 2022,
+                'version': '',
+                'description': '',
+                'contributor': '',
+                'url': '',
+                # arbitrary date picked from coco2017val.json
+                'date_created': '2013-11-14 17:02:52'
+                },
+            'licenses': [{
+                'id': 0,
+                'name': '',
+                'url': ''
+            }],
+            # Filter out `None`s from corrupt images
+            'images': [img for img in images if img is not None],
+            'annotations': sum(annotation_lists, []),
+            'categories': self._build_categories(),
+        }
+        return coco
